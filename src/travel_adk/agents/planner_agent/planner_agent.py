@@ -1,7 +1,7 @@
 from google.adk.agents import LlmAgent
 from travel_adk.schemas.models import TripFormInput, TripRequest
 from travel_adk.state.keys import TRIP_REQUEST_JSON
-from travel_adk.tools.iata_tools import resolve_iata_code
+from travel_adk.agents.planner_agent.tools import resolve_iata_code
 
 def build_planner_agent(model: str) -> LlmAgent:
     return LlmAgent(
