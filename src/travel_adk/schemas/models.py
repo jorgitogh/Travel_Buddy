@@ -33,6 +33,21 @@ class HotelOption(BaseModel):
 class HotelOptions(BaseModel):
     hotels: List[HotelOption] = Field(default_factory=list)
 
+
+class TransportOption(BaseModel):
+    id: str
+    mode: TransportMode
+    provider: Optional[str] = None
+    departure_date: Optional[str] = None
+    arrival_date: Optional[str] = None
+    total_price: Optional[float] = None
+    currency: str = "EUR"
+    notes: Optional[str] = None
+
+
+class TransportOptions(BaseModel):
+    transports: List[TransportOption] = Field(default_factory=list)
+
 class Bundle(BaseModel):
     bundle_id: str
     label: str

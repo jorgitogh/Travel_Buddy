@@ -5,7 +5,7 @@ from travel_adk.agents.planner_agent.tools import resolve_iata_code
 
 def build_planner_agent(model: str) -> LlmAgent:
     return LlmAgent(
-        name="PlannerAgent",
+        name="InputPlannerAgent",
         model=model,
         input_schema=TripFormInput,
         output_schema=TripRequest,
