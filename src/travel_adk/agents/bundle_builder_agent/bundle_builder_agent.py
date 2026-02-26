@@ -22,7 +22,7 @@ HOTELES:
 {{{HOTEL_OPTIONS_JSON}}}
 
 Reglas:
-- No inventes IDs: transport_id y hotel_id DEBEN existir en los JSON.
+- No inventes IDs: `transport_id` debe salir de `transports[].id` y `hotel_id` de `hotels[].id`.
 - Genera bundle_id únicos tipo "B1", "B2"...
 - Etiquetas sugeridas: Económico, Equilibrado, Cómodo, Céntrico, Mejor valor
 - Pros/cons cortos.
