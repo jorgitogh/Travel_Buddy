@@ -1,0 +1,6 @@
+TRIP_REQUEST_JSON = "trip_request_json"
+TRANSPORT_OPTIONS_JSON = "transport_options_json"
+HOTEL_OPTIONS_JSON = "hotel_options_json"
+CANDIDATE_BUNDLES_JSON = "candidate_bundles_json"
+SELECTED_BUNDLE_JSON = "selected_bundle_json"
+FINAL_ITINERARY_JSON = "final_itinerary_json"
