@@ -214,3 +214,55 @@ def search_flights_from_trip(
         limit=limit,
     )
     return {"flights": flights}
+
+
+def search_transport_options_from_trip(
+    origin: str,
+    destination: str,
+    departure_date: str,
+    adults: int = 1,
+    return_date: Optional[str] = None,
+    origin_iata: Optional[str] = None,
+    destination_iata: Optional[str] = None,
+    travel_class: Optional[str] = None,
+    non_stop: bool = False,
+    currency_code: str = "EUR",
+    limit: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    raw = search_flights_from_trip(
+        origin=origin,
+        destination=destination,
+        departure_date=departure_date,
+        adults=adults,
+        return_date=return_date,
+        origin_iata=origin_iata,
+        destination_iata=destination_iata,
+        travel_class=travel_class,
+        non_stop=non_stop,
+        currency_code=currency_code,
+        limit=limit,
+    )
+    flights = raw.get("flights", []) or []
+
+    transports: List[Dict[str, Any]] = []
+    for idx, f in enumerate(flights, start=1):
+        offer_id = f.get("offer_id")
+        outbound = f.get("outbound", {}) or {}
+        inbound = f.get("inbound", {}) or {}
+        dep_dt = outbound.get("departure_time")
+        arr_dt = inbound.get("arrival_time") or outbound.get("arrival_time")
+
+        transports.append(
+            {
+                "id": offer_id or f"T{idx}",
+                "mode": "avion",
+                "provider": f.get("carrier"),
+                "departure_date": dep_dt,
+                "arrival_date": arr_dt,
+                "total_price": f.get("price_total"),
+                "currency": f.get("currency") or currency_code,
+                "notes": "Amadeus Flight Offers v2",
+            }
+        )
+
+    return {"transports": transports}
