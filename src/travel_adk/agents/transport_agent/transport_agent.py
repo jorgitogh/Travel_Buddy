@@ -37,9 +37,10 @@ def _build_google_maps_mcp_tools() -> List[Any]:
     ]
 
 
-def build_transport_agent(model: str) -> LlmAgent:
+def build_transport_agent(model: str, enable_maps_mcp: bool = True) -> LlmAgent:
     tools: List[Any] = [search_transport_options_from_trip]
-    tools.extend(_build_google_maps_mcp_tools())
+    if enable_maps_mcp:
+        tools.extend(_build_google_maps_mcp_tools())
 
     return LlmAgent(
         name="TransportAgent",
@@ -72,6 +73,8 @@ Reglas:
   - Usa MCP de Google Maps (`maps_distance_matrix` y/o `maps_directions`) para estimar ruta y duración.
   - Devuelve transportes con `mode = "coche"` e IDs tipo `C1`, `C2`...
   - Si no hay precio real, usa `total_price = null` y explica distancia/duración en `notes`.
+  - Si MCP no está disponible en ejecución, devuelve una opción base de coche igualmente
+    (`mode = "coche"`, `total_price = null`) indicando en `notes` que no se pudo estimar con Maps.
 
 - No inventes datos: usa solo resultados de tools.
 - Devuelve SOLO JSON válido conforme a TransportOptions.
