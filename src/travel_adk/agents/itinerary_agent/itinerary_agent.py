@@ -28,7 +28,7 @@ Tarea:
 - Generar un plan diario para todas las fechas del viaje, realista y adaptado a destino + intereses.
 
 Reglas:
-- Antes de generar el plan, llama SIEMPRE a `google_search`.
+- Antes de generar el plan, llama a `google_search` entre 1 y 3 veces.
 - Llama a `get_weather_forecast` para el destino y el rango de fechas cuando no haya previsión en estado.
 - Haz varias consultas combinando `destination`, `interests` y el periodo del viaje.
 - Incluye consultas de tipo:
@@ -39,6 +39,8 @@ Reglas:
 - Si hace buen tiempo, prioriza exteriores (barrios, parques, miradores, paseos).
 - Usa los resultados de busqueda para proponer actividades concretas y plausibles.
 - No inventes horarios o precios exactos si no aparecen en los resultados.
+- Si una tool devuelve error o resultados vacíos, continúa igualmente y completa el plan.
+- Tras usar tools, NO llames más tools y responde directamente con el JSON final.
 - Devuelve SOLO JSON válido conforme a Itinerary.
 - `summary` breve y accionable.
 - `days` con una entrada por día, en orden cronológico.

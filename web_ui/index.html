@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Travel Buddy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="grain"></div>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="hero-kicker">Travel Buddy Local UI</p>
+        <h1>Planificador de viaje con agentes reales</h1>
+        <p class="hero-subtitle">
+          Busca transporte y hoteles, compara bundles y genera un itinerario diario adaptado a
+          intereses y previsión meteorológica.
+        </p>
+        <div class="steps">
+          <span class="step-pill" data-step="options">1. Opciones</span>
+          <span class="step-pill" data-step="bundle">2. Bundle</span>
+          <span class="step-pill" data-step="itinerary">3. Itinerario</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Define tu viaje</h2>
+        <form id="trip-form" class="trip-form">
+          <label>
+            Origen
+            <input id="origin" type="text" required value="Madrid" />
+          </label>
+
+          <label>
+            Destino
+            <input id="destination" type="text" required value="Barcelona" />
+          </label>
+
+          <label>
+            Fecha inicio
+            <input id="start_date" type="date" required />
+          </label>
+
+          <label>
+            Fecha fin
+            <input id="end_date" type="date" required />
+          </label>
+
+          <fieldset class="mode-selector">
+            <legend>Transporte</legend>
+            <label>
+              <input type="radio" name="transport_mode" value="avion" checked />
+              Avión
+            </label>
+            <label>
+              <input type="radio" name="transport_mode" value="coche" />
+              Coche
+            </label>
+          </fieldset>
+
+          <label class="full">
+            Intereses (separados por coma)
+            <input id="interests" type="text" value="gastronomia,museos,barrios" />
+          </label>
+
+          <button id="submit-trip" type="submit">Buscar opciones</button>
+        </form>
+      </section>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <section id="metrics-section" class="metrics hidden">
+        <article class="metric-card">
+          <p class="metric-label">Transporte</p>
+          <p class="metric-value" id="metric-transports">0</p>
+          <p class="metric-caption">opciones</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Hoteles</p>
+          <p class="metric-value" id="metric-hotels">0</p>
+          <p class="metric-caption">resultados</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Bundles</p>
+          <p class="metric-value" id="metric-bundles">0</p>
+          <p class="metric-caption">combinaciones</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Meteo</p>
+          <p class="metric-value" id="metric-weather">0</p>
+          <p class="metric-caption">días con previsión</p>
+        </article>
+      </section>
+
+      <section id="bundles-section" class="panel hidden">
+        <div class="section-head">
+          <h2>Selecciona tu bundle</h2>
+          <button id="generate-itinerary" type="button" disabled>Generar itinerario</button>
+        </div>
+        <div id="bundles-grid" class="bundles-grid"></div>
+      </section>
+
+      <section id="itinerary-section" class="panel hidden">
+        <h2>Itinerario final</h2>
+        <p id="itinerary-summary" class="itinerary-summary"></p>
+        <div id="itinerary-days" class="itinerary-days"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
