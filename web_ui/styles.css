@@ -275,10 +275,71 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.budget-filter {
+  border: 1px solid rgba(19, 34, 56, 0.13);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.budget-filter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.budget-title {
+  margin: 0;
+  font-family: "Outfit", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.budget-range-value {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.budget-sliders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.budget-sliders label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.budget-sliders input[type="range"] {
+  width: 100%;
+}
+
+.budget-visible-count {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
 .bundles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 12px;
+}
+
+.bundles-empty {
+  border: 1px dashed rgba(19, 34, 56, 0.24);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  padding: 14px;
 }
 
 .bundle-card {
@@ -426,6 +487,34 @@ button:disabled {
   background: linear-gradient(135deg, #efe8df 0%, #e4d8ca 100%);
 }
 
+.road-route-view {
+  height: 330px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(19, 34, 56, 0.14);
+  overflow: hidden;
+}
+
+.road-route-summary {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.road-route-warnings {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.road-route-warning {
+  border-radius: 10px;
+  border: 1px solid rgba(19, 34, 56, 0.15);
+  background: rgba(255, 255, 255, 0.8);
+  color: #5d1612;
+  font-size: 0.82rem;
+  padding: 8px 10px;
+}
+
 .hidden {
   display: none !important;
 }
@@ -448,6 +537,10 @@ button:disabled {
   .section-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .budget-sliders {
+    grid-template-columns: 1fr;
   }
 
   .metrics {

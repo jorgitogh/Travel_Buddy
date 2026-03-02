@@ -4,11 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Travel Buddy</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
       rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -103,6 +110,23 @@
           <h2>Selecciona tu bundle</h2>
           <button id="generate-itinerary" type="button" disabled>Generar itinerario</button>
         </div>
+        <div id="budget-filter" class="budget-filter hidden">
+          <div class="budget-filter-head">
+            <p class="budget-title">Filtro de presupuesto</p>
+            <p id="budget-range-value" class="budget-range-value"></p>
+          </div>
+          <div class="budget-sliders">
+            <label>
+              Min
+              <input id="budget-min" type="range" />
+            </label>
+            <label>
+              Max
+              <input id="budget-max" type="range" />
+            </label>
+          </div>
+          <p id="budget-visible-count" class="budget-visible-count"></p>
+        </div>
         <div id="bundles-grid" class="bundles-grid"></div>
       </section>
 
@@ -111,8 +135,22 @@
         <p id="itinerary-summary" class="itinerary-summary"></p>
         <div id="itinerary-days" class="itinerary-days"></div>
       </section>
+
+      <section id="road-route-section" class="panel hidden">
+        <div class="section-head">
+          <h2>Ruta en coche</h2>
+        </div>
+        <div id="road-route-view" class="road-route-view"></div>
+        <p id="road-route-summary" class="road-route-summary"></p>
+        <div id="road-route-warnings" class="road-route-warnings"></div>
+      </section>
     </main>
 
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
