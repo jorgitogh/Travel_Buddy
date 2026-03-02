@@ -9,8 +9,10 @@ from time import monotonic
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
@@ -35,12 +37,21 @@ load_environment()
 
 _OPTIONS_CACHE_TTL_S = max(0, int(os.getenv("TRAVEL_OPTIONS_CACHE_TTL_S", "900")))
 _ITINERARY_CACHE_TTL_S = max(0, int(os.getenv("TRAVEL_ITINERARY_CACHE_TTL_S", "1800")))
+_ROAD_ROUTE_CACHE_TTL_S = max(0, int(os.getenv("TRAVEL_ROAD_ROUTE_CACHE_TTL_S", "86400")))
 _CACHE_MAX_ITEMS = max(16, int(os.getenv("TRAVEL_CACHE_MAX_ITEMS", "128")))
+_MAP_TIMEOUT_S = max(
+    2.0,
+    min(float(os.getenv("MAP_TIMEOUT_S", os.getenv("DAY_MAP_TIMEOUT_S", "10"))), 30.0),
+)
+_NOMINATIM_SEARCH_URL = os.getenv("NOMINATIM_SEARCH_URL", "https://nominatim.openstreetmap.org/search")
+_OSRM_BASE_URL = os.getenv("OSRM_BASE_URL", "https://router.project-osrm.org/route/v1")
 
 _options_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
 _itinerary_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_road_route_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
 _options_cache_lock = asyncio.Lock()
 _itinerary_cache_lock = asyncio.Lock()
+_road_route_cache_lock = asyncio.Lock()
 
 
 def _stable_json_key(payload: Dict[str, Any]) -> str:
@@ -251,6 +262,111 @@ def _fetch_weather_for_trip(trip: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _geocode_place(query: str) -> Optional[Dict[str, Any]]:
+    q = " ".join(str(query or "").strip().split())
+    if not q:
+        return None
+
+    try:
+        resp = requests.get(
+            _NOMINATIM_SEARCH_URL,
+            params={
+                "q": q,
+                "format": "jsonv2",
+                "limit": 1,
+                "addressdetails": 0,
+            },
+            headers={
+                "User-Agent": "TravelBuddy/1.0 (+road-route)",
+                "Accept-Language": "es",
+            },
+            timeout=_MAP_TIMEOUT_S,
+        )
+        if not (200 <= resp.status_code < 300):
+            return None
+
+        payload = resp.json() or []
+        if not payload:
+            return None
+
+        item = payload[0]
+        return {
+            "query": q,
+            "label": str(item.get("display_name") or q),
+            "lat": float(item.get("lat")),
+            "lon": float(item.get("lon")),
+        }
+    except Exception:
+        return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+
+    r = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    return r * c
+
+
+def _route_points_osrm(points: List[Dict[str, Any]], mode: str) -> Optional[Dict[str, Any]]:
+    if len(points) < 2:
+        return None
+
+    profile = "driving" if mode == "driving" else "walking"
+    coords = ";".join(f"{float(p['lon'])},{float(p['lat'])}" for p in points)
+    url = f"{_OSRM_BASE_URL}/{profile}/{coords}"
+
+    try:
+        resp = requests.get(
+            url,
+            params={
+                "overview": "full",
+                "geometries": "geojson",
+                "steps": "false",
+            },
+            headers={"User-Agent": "TravelBuddy/1.0 (+road-route)"},
+            timeout=_MAP_TIMEOUT_S,
+        )
+        if not (200 <= resp.status_code < 300):
+            return None
+        payload = resp.json() or {}
+        routes = payload.get("routes", []) or []
+        if not routes:
+            return None
+
+        route = routes[0]
+        legs_payload = route.get("legs", []) or []
+        legs: List[Dict[str, Any]] = []
+        for idx, leg in enumerate(legs_payload):
+            distance_km = round(float(leg.get("distance", 0.0)) / 1000.0, 2)
+            duration_min = round(float(leg.get("duration", 0.0)) / 60.0, 1)
+            legs.append(
+                {
+                    "from_idx": idx,
+                    "to_idx": idx + 1,
+                    "distance_km": distance_km,
+                    "duration_min": duration_min,
+                }
+            )
+
+        geometry = route.get("geometry", {}) or {}
+        coordinates = geometry.get("coordinates", []) or []
+        path = [[float(lat), float(lon)] for lon, lat in coordinates if len([lon, lat]) == 2]
+
+        return {
+            "path": path,
+            "legs": legs,
+            "total_distance_km": round(float(route.get("distance", 0.0)) / 1000.0, 2),
+            "total_duration_min": round(float(route.get("duration", 0.0)) / 60.0, 1),
+            "source": "osrm",
+        }
+    except Exception:
+        return None
+
+
 class TripOptionsRequest(BaseModel):
     origin: str
     destination: str
@@ -294,6 +410,31 @@ class GenerateItineraryRequest(BaseModel):
 class GenerateItineraryResponse(BaseModel):
     final_itinerary: Dict[str, Any]
     notices: List[str] = Field(default_factory=list)
+
+
+class RoadRouteRequest(BaseModel):
+    origin: str
+    destination: str
+
+
+class RoadRoutePoint(BaseModel):
+    label: str
+    lat: float
+    lon: float
+
+
+class RoadRouteResponse(BaseModel):
+    origin: str
+    destination: str
+    origin_point: Optional[RoadRoutePoint] = None
+    destination_point: Optional[RoadRoutePoint] = None
+    reachable_by_car: bool = False
+    path: List[List[float]] = Field(default_factory=list)
+    distance_km: Optional[float] = None
+    duration_min: Optional[float] = None
+    direct_distance_km: Optional[float] = None
+    warnings: List[str] = Field(default_factory=list)
+    route_source: str = "none"
 
 
 async def _run_agent_step_async(
@@ -567,6 +708,11 @@ async def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/favicon.svg")
+
+
 @app.post("/api/options", response_model=TripOptionsResponse)
 async def generate_options(payload: TripOptionsRequest) -> TripOptionsResponse:
     trip_form_input = payload.to_trip_form_input()
@@ -636,6 +782,109 @@ async def generate_itinerary(payload: GenerateItineraryRequest) -> GenerateItine
         return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/road-route", response_model=RoadRouteResponse)
+async def generate_road_route(payload: RoadRouteRequest) -> RoadRouteResponse:
+    origin = " ".join(str(payload.origin or "").strip().split())
+    destination = " ".join(str(payload.destination or "").strip().split())
+    if not origin or not destination:
+        raise HTTPException(status_code=400, detail="origin y destination son obligatorios.")
+
+    cache_key = _stable_json_key({"origin": origin, "destination": destination, "mode": "driving"})
+    if _ROAD_ROUTE_CACHE_TTL_S > 0:
+        async with _road_route_cache_lock:
+            cached = _cache_get(_road_route_cache, cache_key)
+        if cached:
+            return RoadRouteResponse(**cached)
+
+    origin_geo, destination_geo = await asyncio.gather(
+        asyncio.to_thread(_geocode_place, origin),
+        asyncio.to_thread(_geocode_place, destination),
+    )
+
+    warnings: List[str] = []
+    if not origin_geo:
+        warnings.append(f"No se pudo geolocalizar el origen: {origin}.")
+    if not destination_geo:
+        warnings.append(f"No se pudo geolocalizar el destino: {destination}.")
+
+    if not origin_geo or not destination_geo:
+        response = RoadRouteResponse(
+            origin=origin,
+            destination=destination,
+            reachable_by_car=False,
+            warnings=warnings,
+            route_source="none",
+        )
+        if _ROAD_ROUTE_CACHE_TTL_S > 0:
+            async with _road_route_cache_lock:
+                _cache_set(_road_route_cache, cache_key, response.model_dump(), _ROAD_ROUTE_CACHE_TTL_S)
+        return response
+
+    route = await asyncio.to_thread(_route_points_osrm, [origin_geo, destination_geo], "driving")
+    direct_distance_km = round(
+        _haversine_km(
+            float(origin_geo["lat"]),
+            float(origin_geo["lon"]),
+            float(destination_geo["lat"]),
+            float(destination_geo["lon"]),
+        ),
+        2,
+    )
+
+    if not route:
+        warnings.append(
+            "No existe una ruta en coche disponible entre origen y destino con el motor de rutas actual."
+        )
+        response = RoadRouteResponse(
+            origin=origin,
+            destination=destination,
+            origin_point=RoadRoutePoint(
+                label=str(origin_geo["label"]),
+                lat=float(origin_geo["lat"]),
+                lon=float(origin_geo["lon"]),
+            ),
+            destination_point=RoadRoutePoint(
+                label=str(destination_geo["label"]),
+                lat=float(destination_geo["lat"]),
+                lon=float(destination_geo["lon"]),
+            ),
+            reachable_by_car=False,
+            direct_distance_km=direct_distance_km,
+            warnings=warnings,
+            route_source="none",
+        )
+        if _ROAD_ROUTE_CACHE_TTL_S > 0:
+            async with _road_route_cache_lock:
+                _cache_set(_road_route_cache, cache_key, response.model_dump(), _ROAD_ROUTE_CACHE_TTL_S)
+        return response
+
+    response = RoadRouteResponse(
+        origin=origin,
+        destination=destination,
+        origin_point=RoadRoutePoint(
+            label=str(origin_geo["label"]),
+            lat=float(origin_geo["lat"]),
+            lon=float(origin_geo["lon"]),
+        ),
+        destination_point=RoadRoutePoint(
+            label=str(destination_geo["label"]),
+            lat=float(destination_geo["lat"]),
+            lon=float(destination_geo["lon"]),
+        ),
+        reachable_by_car=True,
+        path=route["path"],
+        distance_km=float(route["total_distance_km"]),
+        duration_min=float(route["total_duration_min"]),
+        direct_distance_km=direct_distance_km,
+        warnings=warnings,
+        route_source=str(route.get("source") or "osrm"),
+    )
+    if _ROAD_ROUTE_CACHE_TTL_S > 0:
+        async with _road_route_cache_lock:
+            _cache_set(_road_route_cache, cache_key, response.model_dump(), _ROAD_ROUTE_CACHE_TTL_S)
+    return response
 
 
 FRONTEND_DIR = Path(__file__).resolve().parents[3] / "web_ui"
