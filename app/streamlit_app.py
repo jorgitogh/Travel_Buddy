@@ -5,9 +5,11 @@ import json
 import os
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import streamlit as st
 
+from travel_adk.agents.itinerary_agent.itinerary_agent import build_itinerary_planner_agent
 from travel_adk.config.settings import load_environment
 from travel_adk.agents.hotel_agent.tools import search_hotels_from_trip
 from travel_adk.agents.planner_agent.tools import resolve_iata_code
@@ -273,6 +275,121 @@ def _build_itinerary(trip: Dict[str, Any], selected_bundle: Dict[str, Any]) -> D
     }
 
 
+def _coerce_itinerary_payload(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+
+    if hasattr(raw, "model_dump"):
+        dumped = raw.model_dump()
+        if isinstance(dumped, dict):
+            return dumped
+
+    if isinstance(raw, str):
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+
+    raise ValueError(f"Formato de itinerario no soportado: {type(raw).__name__}")
+
+
+def _ensure_google_llm_api_key() -> None:
+    """
+    Normaliza distintos nombres de variable al formato esperado por google-genai:
+    GOOGLE_API_KEY.
+    """
+    if os.getenv("GOOGLE_API_KEY"):
+        return
+
+    for alias in ("GEMINI_API_KEY", "GOOGLE_GENAI_API_KEY", "GOOGLE_AI_API_KEY"):
+        value = os.getenv(alias, "").strip()
+        if value:
+            os.environ["GOOGLE_API_KEY"] = value
+            return
+
+
+async def _generate_itinerary_with_agent_async(
+    trip: Dict[str, Any],
+    selected_bundle: Dict[str, Any],
+) -> Dict[str, Any]:
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+
+    _ensure_google_llm_api_key()
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise ValueError(
+            "Falta clave LLM para ItineraryPlannerAgent "
+            "(usa GOOGLE_API_KEY, GEMINI_API_KEY o GOOGLE_GENAI_API_KEY)."
+        )
+
+    model = os.getenv("ITINERARY_AGENT_MODEL", "gemini-2.5-flash")
+    session_service = InMemorySessionService()
+    runner = Runner(
+        app_name="TravelBuddyStreamlit",
+        agent=build_itinerary_planner_agent(model),
+        session_service=session_service,
+    )
+
+    user_id = "streamlit_user"
+    session_id = f"itinerary-{uuid4()}"
+    await session_service.create_session(
+        app_name="TravelBuddyStreamlit",
+        user_id=user_id,
+        session_id=session_id,
+        state={
+            TRIP_REQUEST_JSON: trip,
+            SELECTED_BUNDLE_JSON: selected_bundle,
+        },
+    )
+
+    prompt = (
+        "Genera el itinerario final en JSON usando el destino, intereses y fechas. "
+        "Investiga con google_search antes de proponer actividades."
+    )
+    content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+
+    events: List[Any] = []
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=content,
+    ):
+        events.append(event)
+
+    session = await session_service.get_session(
+        app_name="TravelBuddyStreamlit",
+        user_id=user_id,
+        session_id=session_id,
+    )
+    state = (session.state if session else {}) or {}
+    if FINAL_ITINERARY_JSON in state:
+        return _coerce_itinerary_payload(state[FINAL_ITINERARY_JSON])
+
+    for event in reversed(events):
+        actions = getattr(event, "actions", None)
+        state_delta = getattr(actions, "state_delta", None) or {}
+        if FINAL_ITINERARY_JSON in state_delta:
+            return _coerce_itinerary_payload(state_delta[FINAL_ITINERARY_JSON])
+
+    last_error = ""
+    for event in reversed(events):
+        message = getattr(event, "error_message", None)
+        if message:
+            last_error = message
+            break
+
+    if last_error:
+        raise RuntimeError(last_error)
+    raise RuntimeError("No se obtuvo final_itinerary_json desde ItineraryPlannerAgent.")
+
+
+def _generate_itinerary_with_agent(
+    trip: Dict[str, Any],
+    selected_bundle: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _run_async(_generate_itinerary_with_agent_async(trip=trip, selected_bundle=selected_bundle))
+
+
 def _init_state() -> Dict[str, Any]:
     if "flow_state" not in st.session_state:
         st.session_state["flow_state"] = {}
@@ -388,11 +505,30 @@ if bundles:
     if st.button("Generar itinerario"):
         selected_bundle = by_id[selected_bundle_id]
         flow_state[SELECTED_BUNDLE_JSON] = selected_bundle
-        flow_state[FINAL_ITINERARY_JSON] = _build_itinerary(
-            trip=flow_state[TRIP_REQUEST_JSON],
-            selected_bundle=selected_bundle,
-        )
-        st.success("Itinerario generado.")
+        trip_data = flow_state[TRIP_REQUEST_JSON]
+
+        if not os.getenv("SERPAPI_API_KEY"):
+            st.info(
+                "Falta SERPAPI_API_KEY: el agente generará "
+                "itinerario sin resultados de búsqueda web."
+            )
+
+        with st.spinner("Generando itinerario realista con ItineraryAgent..."):
+            try:
+                flow_state[FINAL_ITINERARY_JSON] = _generate_itinerary_with_agent(
+                    trip=trip_data,
+                    selected_bundle=selected_bundle,
+                )
+                st.success("Itinerario generado con ItineraryAgent.")
+            except Exception as exc:
+                flow_state[FINAL_ITINERARY_JSON] = _build_itinerary(
+                    trip=trip_data,
+                    selected_bundle=selected_bundle,
+                )
+                st.warning(
+                    "No se pudo usar ItineraryAgent; se usa plan básico local. "
+                    f"Detalle: {type(exc).__name__}: {exc}"
+                )
 
 if FINAL_ITINERARY_JSON in flow_state:
     itinerary = flow_state[FINAL_ITINERARY_JSON]
