@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 import requests
 
+from travel_adk.config.settings import load_environment
+
 
 @dataclass
 class _Token:
@@ -123,6 +125,7 @@ _client: Optional[AmadeusHTTPClient] = None
 
 def get_amadeus_client() -> AmadeusHTTPClient:
     global _client
+    load_environment()
     if _client is None:
         _client = AmadeusHTTPClient(
             client_id=os.getenv("AMADEUS_CLIENT_ID", ""),

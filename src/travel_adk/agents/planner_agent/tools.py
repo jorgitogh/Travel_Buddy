@@ -1,70 +1,108 @@
 import os
+import re
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
+from travel_adk.config.settings import load_environment
+from travel_adk.services.amadeus_http import get_amadeus_client
 
-def _amadeus_client():
-    from amadeus import Client  # type: ignore
-    return Client(
-        client_id=os.getenv("AMADEUS_CLIENT_ID"),
-        client_secret=os.getenv("AMADEUS_CLIENT_SECRET"),
-    )
+_IATA_RE = re.compile(r"^[A-Z]{3}$")
 
-@lru_cache(maxsize=1024)
-def resolve_iata_code(city: str, prefer: str = "CITY") -> Dict[str, Any]:
-    q = (city or "").strip()
-    if not q:
-        return {"query": city, "iata": None, "subType": None, "name": None, "source": None}
 
+def _pick_location(items: Any, prefer: str) -> Optional[Dict[str, Any]]:
+    if not isinstance(items, list):
+        return None
+
+    def pick(subtype: str) -> Optional[Dict[str, Any]]:
+        for item in items:
+            if item.get("subType") == subtype and item.get("iataCode"):
+                return item
+        return None
+
+    if prefer.upper() == "AIRPORT":
+        return pick("AIRPORT") or pick("CITY")
+    return pick("CITY") or pick("AIRPORT")
+
+
+def _resolve_with_amadeus_http(query: str, prefer: str) -> Optional[Dict[str, Any]]:
+    load_environment()
+    if not os.getenv("AMADEUS_CLIENT_ID") or not os.getenv("AMADEUS_CLIENT_SECRET"):
+        return None
 
     try:
-        if os.getenv("AMADEUS_CLIENT_ID") and os.getenv("AMADEUS_CLIENT_SECRET"):
-            amadeus = _amadeus_client()
-            resp = amadeus.reference_data.locations.get(keyword=q, subType="CITY,AIRPORT")
-            data = getattr(resp, "data", []) or []
+        client = get_amadeus_client()
+        payload = client.get(
+            "/v1/reference-data/locations",
+            params={"keyword": query, "subType": "CITY,AIRPORT"},
+        )
+        chosen = _pick_location(payload.get("data", []), prefer)
+        if not chosen:
+            return None
 
-            def pick(items, subtype):
-                for it in items:
-                    if it.get("subType") == subtype and it.get("iataCode"):
-                        return it
-                return None
-
-            if prefer.upper() == "AIRPORT":
-                chosen = pick(data, "AIRPORT") or pick(data, "CITY")
-            else:
-                chosen = pick(data, "CITY") or pick(data, "AIRPORT")
-
-            if chosen:
-                return {
-                    "query": q,
-                    "iata": chosen.get("iataCode"),
-                    "subType": chosen.get("subType"),
-                    "name": chosen.get("name"),
-                    "source": "amadeus",
-                }
+        return {
+            "query": query,
+            "iata": chosen.get("iataCode"),
+            "subType": chosen.get("subType"),
+            "name": chosen.get("name"),
+            "source": "amadeus_http",
+        }
     except Exception:
-        pass
+        return None
 
+
+def _resolve_with_airportsdata(query: str) -> Optional[Dict[str, Any]]:
     try:
-        import airportsdata # type: ignore
-        airports = airportsdata.load("IATA") 
+        import airportsdata  # type: ignore
+
+        airports = airportsdata.load("IATA")
+        q = (query or "").strip()
+        if not q:
+            return None
+
+        if _IATA_RE.match(q.upper()):
+            airport = airports.get(q.upper())
+            if airport:
+                return {
+                    "query": query,
+                    "iata": airport.get("iata"),
+                    "subType": "AIRPORT",
+                    "name": airport.get("name"),
+                    "source": "airportsdata",
+                }
 
         q_lower = q.lower()
         matches = [
-            a for a in airports.values()
-            if a.get("iata") and (a.get("city") or "").lower() == q_lower
+            a for a in airports.values() if a.get("iata") and (a.get("city") or "").lower() == q_lower
         ]
-
-        if matches:
+        # Evita elegir aeropuertos ambiguos por orden alfabético.
+        if len(matches) == 1:
             a = matches[0]
             return {
-                "query": q,
+                "query": query,
                 "iata": a.get("iata"),
                 "subType": "AIRPORT",
                 "name": a.get("name"),
                 "source": "airportsdata",
             }
     except Exception:
-        pass
+        return None
+
+    return None
+
+
+@lru_cache(maxsize=1024)
+def resolve_iata_code(city: str, prefer: str = "CITY") -> Dict[str, Any]:
+    load_environment()
+    q = (city or "").strip()
+    if not q:
+        return {"query": city, "iata": None, "subType": None, "name": None, "source": None}
+
+    amadeus_result = _resolve_with_amadeus_http(q, prefer)
+    if amadeus_result:
+        return amadeus_result
+
+    airportdata_result = _resolve_with_airportsdata(q)
+    if airportdata_result:
+        return airportdata_result
 
     return {"query": q, "iata": None, "subType": None, "name": None, "source": None}

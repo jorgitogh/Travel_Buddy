@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
+from travel_adk.config.settings import load_environment
 from travel_adk.agents.hotel_agent.tools import search_hotels_from_trip
 from travel_adk.agents.planner_agent.tools import resolve_iata_code
 from travel_adk.agents.transport_agent.tools import search_transport_options_from_trip
@@ -19,6 +20,8 @@ from travel_adk.state.keys import (
     TRANSPORT_OPTIONS_JSON,
     TRIP_REQUEST_JSON,
 )
+
+load_environment()
 
 
 def _normalize_interests(raw: str) -> List[str]:
@@ -314,8 +317,8 @@ with st.form("trip_form"):
 if submitted:
     flow_state.clear()
 
-    if end_date < start_date:
-        st.error("La fecha de fin no puede ser anterior a la de inicio.")
+    if end_date <= start_date:
+        st.error("La fecha de fin debe ser posterior a la de inicio (al menos 1 noche).")
     else:
         trip_request = _normalize_trip_request(
             origin=origin,
