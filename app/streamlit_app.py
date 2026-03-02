@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 from datetime import date, timedelta
@@ -12,6 +13,7 @@ import streamlit as st
 from travel_adk.agents.bundle_builder_agent.bundle_builder_agent import build_bundle_builder_agent
 from travel_adk.agents.hotel_agent.hotel_agent import build_hotel_agent
 from travel_adk.agents.itinerary_agent.itinerary_agent import build_itinerary_planner_agent
+from travel_adk.agents.itinerary_agent.tools import get_weather_forecast
 from travel_adk.agents.planner_agent.planner_agent import build_planner_agent
 from travel_adk.config.settings import load_environment
 from travel_adk.agents.transport_agent.transport_agent import build_transport_agent
@@ -22,6 +24,7 @@ from travel_adk.state.keys import (
     SELECTED_BUNDLE_JSON,
     TRANSPORT_OPTIONS_JSON,
     TRIP_REQUEST_JSON,
+    WEATHER_FORECAST_JSON,
 )
 
 load_environment()
@@ -68,11 +71,73 @@ def _default_agent_model() -> str:
     return os.getenv("TRAVEL_AGENT_MODEL", os.getenv("ITINERARY_AGENT_MODEL", "gemini-2.5-flash"))
 
 
+def _weather_icon(group: str) -> str:
+    icons = {
+        "sunny": "☀️",
+        "cloudy": "⛅",
+        "rain": "🌧️",
+        "storm": "⛈️",
+        "snow": "❄️",
+        "fog": "🌫️",
+        "neutral": "🧭",
+    }
+    return icons.get(group, "🧭")
+
+
+def _weather_mood_class(group: str) -> str:
+    classes = {
+        "sunny": "mood-sunny",
+        "cloudy": "mood-cloudy",
+        "rain": "mood-rain",
+        "storm": "mood-storm",
+        "snow": "mood-snow",
+        "fog": "mood-fog",
+        "neutral": "mood-neutral",
+    }
+    return classes.get(group, "mood-neutral")
+
+
+def _weather_summary(day_weather: Dict[str, Any]) -> str:
+    if not day_weather:
+        return "Sin previsión disponible"
+
+    label = day_weather.get("weather_label") or "Variable"
+    tmin = day_weather.get("temp_min_c")
+    tmax = day_weather.get("temp_max_c")
+    pop = day_weather.get("precipitation_probability_max")
+
+    temp_bits: List[str] = []
+    if tmin is not None:
+        temp_bits.append(f"Min {round(float(tmin))}°C")
+    if tmax is not None:
+        temp_bits.append(f"Max {round(float(tmax))}°C")
+    if pop is not None:
+        temp_bits.append(f"Lluvia {round(float(pop))}%")
+
+    if temp_bits:
+        return f"{label} · {' · '.join(temp_bits)}"
+    return label
+
+
+def _weather_by_date(forecast: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    days = (forecast or {}).get("days", []) or []
+    by_date: Dict[str, Dict[str, Any]] = {}
+    for day in days:
+        d = day.get("date")
+        if d:
+            by_date[str(d)] = day
+    return by_date
+
+
+def _fetch_weather_for_trip(trip: Dict[str, Any]) -> Dict[str, Any]:
+    return get_weather_forecast(
+        destination=str(trip.get("destination") or ""),
+        start_date=str(trip.get("start_date") or ""),
+        end_date=str(trip.get("end_date") or ""),
+    )
+
+
 def _ensure_google_llm_api_key() -> None:
-    """
-    Normaliza distintos nombres de variable al formato esperado por google-genai:
-    GOOGLE_API_KEY.
-    """
     if os.getenv("GOOGLE_API_KEY"):
         return
 
@@ -220,6 +285,7 @@ def _run_core_agents(trip_form_input: Dict[str, Any]) -> Dict[str, Dict[str, Any
 async def _generate_itinerary_with_agent_async(
     trip: Dict[str, Any],
     selected_bundle: Dict[str, Any],
+    weather_forecast: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -249,6 +315,7 @@ async def _generate_itinerary_with_agent_async(
         state={
             TRIP_REQUEST_JSON: trip,
             SELECTED_BUNDLE_JSON: selected_bundle,
+            WEATHER_FORECAST_JSON: weather_forecast or {},
         },
     )
 
@@ -296,8 +363,15 @@ async def _generate_itinerary_with_agent_async(
 def _generate_itinerary_with_agent(
     trip: Dict[str, Any],
     selected_bundle: Dict[str, Any],
+    weather_forecast: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return _run_async(_generate_itinerary_with_agent_async(trip=trip, selected_bundle=selected_bundle))
+    return _run_async(
+        _generate_itinerary_with_agent_async(
+            trip=trip,
+            selected_bundle=selected_bundle,
+            weather_forecast=weather_forecast,
+        )
+    )
 
 
 def _init_state() -> Dict[str, Any]:
@@ -309,6 +383,82 @@ def _init_state() -> Dict[str, Any]:
 st.set_page_config(page_title="Travel Buddy Flow Demo", layout="wide")
 st.title("Travel Buddy - Demo de Flujo")
 st.caption("Prueba rápida del flujo planner -> transport/hotel -> bundles -> selección -> itinerary.")
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+
+.weather-card {
+  border-radius: 18px;
+  padding: 16px 18px;
+  margin: 10px 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
+  color: #0f172a;
+}
+
+.weather-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.weather-card .date {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  font-size: 1.02rem;
+}
+
+.weather-card .meteo {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-weight: 600;
+  font-size: 0.92rem;
+  opacity: 0.9;
+}
+
+.weather-card .blocks {
+  margin: 0;
+  padding-left: 18px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.weather-card .blocks li {
+  margin: 5px 0;
+}
+
+.mood-sunny {
+  background: linear-gradient(135deg, #ffe8a3 0%, #ffd27f 45%, #ffc46d 100%);
+}
+
+.mood-cloudy {
+  background: linear-gradient(135deg, #e7edf6 0%, #d8e0eb 45%, #c9d4e4 100%);
+}
+
+.mood-rain {
+  background: linear-gradient(135deg, #c7d7f2 0%, #9eb8de 45%, #7f9bc9 100%);
+}
+
+.mood-storm {
+  background: linear-gradient(135deg, #c2c8da 0%, #9ea9c5 45%, #7e8bad 100%);
+}
+
+.mood-snow {
+  background: linear-gradient(135deg, #f2f6fb 0%, #e7effa 45%, #dbe8f7 100%);
+}
+
+.mood-fog {
+  background: linear-gradient(135deg, #e8eaee 0%, #dadde3 45%, #c9ced7 100%);
+}
+
+.mood-neutral {
+  background: linear-gradient(135deg, #f0ece8 0%, #e7ddd2 45%, #dccdbf 100%);
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 flow_state = _init_state()
 
@@ -343,6 +493,16 @@ if submitted:
         with st.spinner("Ejecutando agentes: planner -> transport/hotel -> bundles..."):
             try:
                 flow_state.update(_run_core_agents(trip_form_input=trip_form_input))
+                weather = _fetch_weather_for_trip(flow_state[TRIP_REQUEST_JSON])
+                flow_state[WEATHER_FORECAST_JSON] = weather
+                if weather.get("warning") == "forecast_out_of_range":
+                    st.info(
+                        "La previsión de Open-Meteo solo llega a fechas cercanas. "
+                        f"Disponible hasta {weather.get('forecast_supported_until')}."
+                    )
+                elif weather.get("error"):
+                    detail = weather.get("message") or weather.get("error")
+                    st.info(f"Previsión meteorológica no disponible: {detail}")
                 st.success("Opciones generadas con agentes.")
             except Exception as exc:
                 st.error(f"Error en flujo multiagente: {type(exc).__name__}: {exc}")
@@ -353,6 +513,7 @@ if flow_state:
         TRIP_REQUEST_JSON,
         TRANSPORT_OPTIONS_JSON,
         HOTEL_OPTIONS_JSON,
+        WEATHER_FORECAST_JSON,
         CANDIDATE_BUNDLES_JSON,
         SELECTED_BUNDLE_JSON,
         FINAL_ITINERARY_JSON,
@@ -392,6 +553,7 @@ if bundles:
                 flow_state[FINAL_ITINERARY_JSON] = _generate_itinerary_with_agent(
                     trip=trip_data,
                     selected_bundle=selected_bundle,
+                    weather_forecast=flow_state.get(WEATHER_FORECAST_JSON),
                 )
                 st.success("Itinerario generado con ItineraryAgent.")
             except Exception as exc:
@@ -399,11 +561,24 @@ if bundles:
 
 if FINAL_ITINERARY_JSON in flow_state:
     itinerary = flow_state[FINAL_ITINERARY_JSON]
+    weather_map = _weather_by_date(flow_state.get(WEATHER_FORECAST_JSON) or {})
     st.subheader("Planning Final")
     st.write(itinerary.get("summary"))
 
     for day in itinerary.get("days", []):
-        with st.container(border=True):
-            st.markdown(f"**{day.get('date')}**")
-            for block in day.get("blocks", []):
-                st.write(f"- {block}")
+        day_date = str(day.get("date") or "")
+        weather_day = weather_map.get(day_date, {})
+        weather_group = str(weather_day.get("weather_group") or "neutral")
+        meteo_line = f"{_weather_icon(weather_group)} {_weather_summary(weather_day)}"
+
+        blocks_html = "".join(f"<li>{html.escape(str(block))}</li>" for block in (day.get("blocks") or []))
+        card_html = f"""
+<div class="weather-card {_weather_mood_class(weather_group)}">
+  <div class="card-header">
+    <div class="date">{html.escape(day_date)}</div>
+    <div class="meteo">{html.escape(meteo_line)}</div>
+  </div>
+  <ul class="blocks">{blocks_html}</ul>
+</div>
+"""
+        st.markdown(card_html, unsafe_allow_html=True)
