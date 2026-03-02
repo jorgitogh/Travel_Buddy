@@ -259,7 +259,7 @@ def get_weather_forecast(
 
 def google_search(
     query: str,
-    num_results: int = 5,
+    num_results: int = 3,
     language: str = "es",
     country: str = "es",
 ) -> Dict[str, Any]:
@@ -286,8 +286,8 @@ def google_search(
     try:
         n = int(num_results)
     except Exception:
-        n = 5
-    n = max(1, min(n, 10))
+        n = 3
+    n = max(1, min(n, 5))
 
     timeout_s_raw = os.getenv("SERPAPI_TIMEOUT_S", "12").strip()
     try:

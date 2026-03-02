@@ -5,6 +5,7 @@ import json
 import os
 from datetime import date
 from pathlib import Path
+from time import monotonic
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -31,6 +32,54 @@ from travel_adk.state.keys import (
 )
 
 load_environment()
+
+_OPTIONS_CACHE_TTL_S = max(0, int(os.getenv("TRAVEL_OPTIONS_CACHE_TTL_S", "900")))
+_ITINERARY_CACHE_TTL_S = max(0, int(os.getenv("TRAVEL_ITINERARY_CACHE_TTL_S", "1800")))
+_CACHE_MAX_ITEMS = max(16, int(os.getenv("TRAVEL_CACHE_MAX_ITEMS", "128")))
+
+_options_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_itinerary_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_options_cache_lock = asyncio.Lock()
+_itinerary_cache_lock = asyncio.Lock()
+
+
+def _stable_json_key(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _cache_get(cache: Dict[str, tuple[float, Dict[str, Any]]], key: str) -> Optional[Dict[str, Any]]:
+    item = cache.get(key)
+    if not item:
+        return None
+    expires_at, value = item
+    if expires_at < monotonic():
+        cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(cache: Dict[str, tuple[float, Dict[str, Any]]], key: str, value: Dict[str, Any], ttl_s: int) -> None:
+    if ttl_s <= 0:
+        return
+
+    cache[key] = (monotonic() + ttl_s, value)
+    if len(cache) <= _CACHE_MAX_ITEMS:
+        return
+
+    now = monotonic()
+    for cache_key, (expires_at, _) in list(cache.items()):
+        if expires_at < now:
+            cache.pop(cache_key, None)
+
+    if len(cache) <= _CACHE_MAX_ITEMS:
+        return
+
+    overflow = len(cache) - _CACHE_MAX_ITEMS
+    if overflow <= 0:
+        return
+    oldest = sorted(cache.items(), key=lambda x: x[1][0])[:overflow]
+    for cache_key, _ in oldest:
+        cache.pop(cache_key, None)
 
 
 def _normalize_interests(raw: str | List[str]) -> List[str]:
@@ -338,6 +387,7 @@ async def _run_core_agents_async(
     transport_state = {TRIP_REQUEST_JSON: trip_request}
     hotel_state = {TRIP_REQUEST_JSON: trip_request}
     transport_mode = str(trip_request.get("transport_mode") or "").lower()
+    weather_task = asyncio.to_thread(_fetch_weather_for_trip, trip_request)
 
     transport_task = _run_agent_step_async(
         agent=build_transport_agent(
@@ -354,7 +404,11 @@ async def _run_core_agents_async(
         prompt="Genera opciones de hotel usando trip_request_json. Devuelve SOLO JSON valido.",
         state=hotel_state,
     )
-    transport_options, hotel_options = await asyncio.gather(transport_task, hotel_task)
+    transport_options, hotel_options, weather_forecast = await asyncio.gather(
+        transport_task,
+        hotel_task,
+        weather_task,
+    )
 
     bundle_options = await _run_agent_step_async(
         agent=build_bundle_builder_agent(model),
@@ -374,6 +428,7 @@ async def _run_core_agents_async(
         TRANSPORT_OPTIONS_JSON: transport_options,
         HOTEL_OPTIONS_JSON: hotel_options,
         CANDIDATE_BUNDLES_JSON: bundle_options,
+        WEATHER_FORECAST_JSON: weather_forecast or {},
     }
 
 
@@ -514,10 +569,18 @@ async def healthcheck() -> Dict[str, str]:
 
 @app.post("/api/options", response_model=TripOptionsResponse)
 async def generate_options(payload: TripOptionsRequest) -> TripOptionsResponse:
+    trip_form_input = payload.to_trip_form_input()
+    cache_key = _stable_json_key(trip_form_input)
+
+    if _OPTIONS_CACHE_TTL_S > 0:
+        async with _options_cache_lock:
+            cached = _cache_get(_options_cache, cache_key)
+        if cached:
+            return TripOptionsResponse(**cached)
+
     try:
-        flow_state = await _run_core_agents_async(trip_form_input=payload.to_trip_form_input())
-        weather = _fetch_weather_for_trip(flow_state[TRIP_REQUEST_JSON])
-        flow_state[WEATHER_FORECAST_JSON] = weather
+        flow_state = await _run_core_agents_async(trip_form_input=trip_form_input)
+        weather = flow_state.get(WEATHER_FORECAST_JSON) or {}
 
         notices: List[str] = []
         if weather.get("warning") == "forecast_out_of_range":
@@ -529,20 +592,33 @@ async def generate_options(payload: TripOptionsRequest) -> TripOptionsResponse:
             detail = weather.get("message") or weather.get("error")
             notices.append(f"Previsión meteorológica no disponible: {detail}")
 
-        return TripOptionsResponse(
+        response = TripOptionsResponse(
             trip_request=flow_state[TRIP_REQUEST_JSON],
             transport_options=flow_state[TRANSPORT_OPTIONS_JSON],
             hotel_options=flow_state[HOTEL_OPTIONS_JSON],
             candidate_bundles=flow_state[CANDIDATE_BUNDLES_JSON],
-            weather_forecast=flow_state[WEATHER_FORECAST_JSON],
+            weather_forecast=weather,
             notices=notices,
         )
+        if _OPTIONS_CACHE_TTL_S > 0:
+            async with _options_cache_lock:
+                _cache_set(_options_cache, cache_key, response.model_dump(), _OPTIONS_CACHE_TTL_S)
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
 @app.post("/api/itinerary", response_model=GenerateItineraryResponse)
 async def generate_itinerary(payload: GenerateItineraryRequest) -> GenerateItineraryResponse:
+    request_payload = payload.model_dump()
+    cache_key = _stable_json_key(request_payload)
+
+    if _ITINERARY_CACHE_TTL_S > 0:
+        async with _itinerary_cache_lock:
+            cached = _cache_get(_itinerary_cache, cache_key)
+        if cached:
+            return GenerateItineraryResponse(**cached)
+
     notices: List[str] = []
     if not os.getenv("SERPAPI_API_KEY"):
         notices.append("Falta SERPAPI_API_KEY: el itinerario se generará sin búsqueda web.")
@@ -553,7 +629,11 @@ async def generate_itinerary(payload: GenerateItineraryRequest) -> GenerateItine
             selected_bundle=payload.selected_bundle,
             weather_forecast=payload.weather_forecast,
         )
-        return GenerateItineraryResponse(final_itinerary=itinerary, notices=notices)
+        response = GenerateItineraryResponse(final_itinerary=itinerary, notices=notices)
+        if _ITINERARY_CACHE_TTL_S > 0:
+            async with _itinerary_cache_lock:
+                _cache_set(_itinerary_cache, cache_key, response.model_dump(), _ITINERARY_CACHE_TTL_S)
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
