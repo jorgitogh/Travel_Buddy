@@ -487,6 +487,125 @@ button:disabled {
   background: linear-gradient(135deg, #efe8df 0%, #e4d8ca 100%);
 }
 
+/* ── Calendar export ──────────────────────────────────────────────────────── */
+
+.calendar-export {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+
+.cal-export-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.cal-export-icon {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.cal-export-title {
+  margin: 0;
+  font-family: "Outfit", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.cal-export-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  width: 100%;
+  padding-left: 30px;
+}
+
+.cal-export-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Base calendar button — overrides the global `button` rule where needed */
+.cal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font: 600 0.88rem/1 "Outfit", sans-serif;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.18s ease, filter 0.15s ease;
+  white-space: nowrap;
+}
+
+.cal-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+}
+
+.cal-btn:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+.cal-btn-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+/* Google Calendar */
+.cal-btn--google {
+  background: #fff;
+  color: #3c4043;
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.cal-btn--google:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+/* Outlook */
+.cal-btn--outlook {
+  background: #0078D4;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 120, 212, 0.28);
+}
+
+/* iCalendar */
+.cal-btn--ical {
+  background: #1D7CF2;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(29, 124, 242, 0.28);
+}
+
+.cal-export-note {
+  margin: 14px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.cal-export-note code {
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  background: rgba(19, 34, 56, 0.07);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* ── Road route ───────────────────────────────────────────────────────────── */
+
 .road-route-view {
   height: 330px;
   border-radius: var(--radius-lg);
@@ -513,6 +632,121 @@ button:disabled {
   color: #5d1612;
   font-size: 0.82rem;
   padding: 8px 10px;
+}
+
+/* ── Google Maps button ───────────────────────────────────────────────────── */
+
+.road-route-gmaps {
+  margin-top: 10px;
+}
+
+.gmaps-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font: 600 0.88rem/1 "Outfit", sans-serif;
+  text-decoration: none;
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, filter 0.15s ease;
+}
+
+.gmaps-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  filter: brightness(1.03);
+}
+
+.gmaps-btn:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+.gmaps-btn-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ── Fuel estimation ──────────────────────────────────────────────────────── */
+
+.road-route-fuel {
+  margin-top: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(15, 95, 212, 0.18);
+  background: linear-gradient(135deg, rgba(15, 95, 212, 0.06) 0%, rgba(15, 155, 142, 0.06) 100%);
+  padding: 14px 16px;
+}
+
+.fuel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.fuel-stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.fuel-stat--wide {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 2px;
+}
+
+.fuel-stat-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.fuel-stat-label {
+  margin: 0 0 3px;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.fuel-stat-value {
+  margin: 0;
+  font-family: "Outfit", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.fuel-stat-meta {
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.fuel-stat-disclaimer {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+@media (max-width: 480px) {
+  .fuel-grid {
+    grid-template-columns: 1fr;
+  }
+  .fuel-stat--wide {
+    grid-column: 1;
+  }
 }
 
 .hidden {
@@ -549,5 +783,13 @@ button:disabled {
 
   .day-head {
     flex-direction: column;
+  }
+
+  .cal-export-buttons {
+    flex-direction: column;
+  }
+
+  .cal-btn {
+    justify-content: center;
   }
 }
