@@ -127,63 +127,6 @@
           <button id="google-calendar-btn" class="itinerary-action" type="button" disabled>Añadir a Google Calendar</button>
         </div>
         <div id="itinerary-days" class="itinerary-days"></div>
-
-        <!-- Calendar export – shown after itinerary is rendered -->
-        <div id="calendar-export" class="calendar-export hidden">
-          <div class="cal-export-header">
-            <span class="cal-export-icon" aria-hidden="true">
-              <!-- Calendar icon -->
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
-            </span>
-            <h3 class="cal-export-title">Añadir al calendario</h3>
-            <p class="cal-export-hint">Se creará un evento por cada día del itinerario</p>
-          </div>
-
-          <div class="cal-export-buttons">
-
-            <!-- Google Calendar -->
-            <button id="cal-google" type="button" class="cal-btn cal-btn--google">
-              <svg class="cal-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Google Calendar
-            </button>
-
-            <!-- Outlook -->
-            <button id="cal-outlook" type="button" class="cal-btn cal-btn--outlook">
-              <svg class="cal-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <rect width="24" height="24" rx="3" fill="#0078D4"/>
-                <path fill="#fff" d="M7 6h5.5C14.43 6 16 7.57 16 9.5S14.43 13 12.5 13H9v5H7V6zm2 5h3.5c.83 0 1.5-.67 1.5-1.5S13.33 8 12.5 8H9v3z"/>
-                <path fill="#fff" d="M16.5 13.5l3 4.5h-2.3l-2-3-2 3H11l3-4.5-2.8-4.5h2.3l1.8 3 1.8-3H19l-2.5 4.5z"/>
-              </svg>
-              Outlook (.ics)
-            </button>
-
-            <!-- iCalendar -->
-            <button id="cal-ical" type="button" class="cal-btn cal-btn--ical">
-              <svg class="cal-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <rect width="24" height="24" rx="3" fill="#1D7CF2"/>
-                <path fill="#fff" d="M5 10h14v9a2 2 0 01-2 2H7a2 2 0 01-2-2v-9zm2-5h2V3h2v2h4V3h2v2h1a2 2 0 012 2v1H4V7a2 2 0 012-2h1z"/>
-                <path fill="#fff" d="M9 13h2v2H9zm4 0h2v2h-2zm-4 3h2v2H9zm4 0h2v2h-2z"/>
-              </svg>
-              iCalendar (.ics)
-            </button>
-
-          </div>
-
-          <p class="cal-export-note">
-            <strong>Google Calendar</strong>: abre una pestaña por día — permite ventanas emergentes si el navegador las bloquea.
-            <strong>Outlook</strong> e <strong>iCalendar</strong>: descarga un archivo <code>.ics</code> importable en cualquier app de calendario.
-          </p>
-        </div>
       </section>
 
       <section id="road-route-section" class="panel hidden">
@@ -192,14 +135,15 @@
         </div>
         <div id="road-route-view" class="road-route-view"></div>
         <p id="road-route-summary" class="road-route-summary"></p>
-        <div id="road-route-fuel" class="road-route-fuel hidden"></div>
         <div id="road-route-warnings" class="road-route-warnings"></div>
-        <div id="road-route-gmaps" class="road-route-gmaps hidden">
-          <a id="road-route-gmaps-link" href="#" target="_blank" rel="noopener noreferrer" class="gmaps-btn">
-            <svg class="gmaps-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
-              <circle fill="#fff" cx="12" cy="9" r="2.5"/>
-            </svg>
+        <div class="road-route-actions">
+          <a
+            id="road-route-google-maps"
+            class="road-route-action-link hidden"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Abrir en Google Maps
           </a>
         </div>
