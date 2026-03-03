@@ -59,18 +59,6 @@
             <input id="end_date" type="date" required />
           </label>
 
-          <fieldset class="mode-selector">
-            <legend>Transporte</legend>
-            <label>
-              <input type="radio" name="transport_mode" value="avion" checked />
-              Avión
-            </label>
-            <label>
-              <input type="radio" name="transport_mode" value="coche" />
-              Coche
-            </label>
-          </fieldset>
-
           <label class="full">
             Intereses (separados por coma)
             <input id="interests" type="text" value="gastronomia,museos,barrios" />
@@ -133,6 +121,11 @@
       <section id="itinerary-section" class="panel hidden">
         <h2>Itinerario final</h2>
         <p id="itinerary-summary" class="itinerary-summary"></p>
+        <div class="itinerary-actions">
+          <button id="export-json-btn" class="itinerary-action" type="button" disabled>Exportar JSON</button>
+          <button id="export-ics-btn" class="itinerary-action" type="button" disabled>Exportar .ics</button>
+          <button id="google-calendar-btn" class="itinerary-action" type="button" disabled>Añadir a Google Calendar</button>
+        </div>
         <div id="itinerary-days" class="itinerary-days"></div>
       </section>
 
@@ -143,6 +136,17 @@
         <div id="road-route-view" class="road-route-view"></div>
         <p id="road-route-summary" class="road-route-summary"></p>
         <div id="road-route-warnings" class="road-route-warnings"></div>
+        <div class="road-route-actions">
+          <a
+            id="road-route-google-maps"
+            class="road-route-action-link hidden"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Abrir en Google Maps
+          </a>
+        </div>
       </section>
     </main>
 

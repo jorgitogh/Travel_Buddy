@@ -32,10 +32,14 @@ const refs = {
   itinerarySection: document.querySelector("#itinerary-section"),
   itinerarySummary: document.querySelector("#itinerary-summary"),
   itineraryDays: document.querySelector("#itinerary-days"),
+  exportJsonButton: document.querySelector("#export-json-btn"),
+  exportIcsButton: document.querySelector("#export-ics-btn"),
+  googleCalendarButton: document.querySelector("#google-calendar-btn"),
   roadRouteSection: document.querySelector("#road-route-section"),
   roadRouteView: document.querySelector("#road-route-view"),
   roadRouteSummary: document.querySelector("#road-route-summary"),
   roadRouteWarnings: document.querySelector("#road-route-warnings"),
+  roadRouteGoogleMaps: document.querySelector("#road-route-google-maps"),
   messages: document.querySelector("#messages"),
   metricTransports: document.querySelector("#metric-transports"),
   metricHotels: document.querySelector("#metric-hotels"),
@@ -68,6 +72,54 @@ function formatDate(value) {
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function parseIsoDateLocal(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const parts = value.split("-");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (!year || !month || !day) {
+    return null;
+  }
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function compactDate(dateValue) {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+  const day = String(dateValue.getDate()).padStart(2, "0");
+  const hours = String(dateValue.getHours()).padStart(2, "0");
+  const minutes = String(dateValue.getMinutes()).padStart(2, "0");
+  const seconds = String(dateValue.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+}
+
+function safeFileToken(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function downloadTextFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formatPrice(value) {
@@ -112,6 +164,43 @@ function formatMinutes(valueMin) {
   return `${hours} h ${mins} min`;
 }
 
+function transportModeLabel(transport) {
+  const mode = String(transport?.mode || "").toLowerCase();
+  if (mode === "avion") {
+    return "✈️ Avión";
+  }
+  if (mode === "coche") {
+    return "🚗 Coche";
+  }
+  return "🧭 Transporte";
+}
+
+function transportProviderLabel(transport) {
+  const mode = String(transport?.mode || "").toLowerCase();
+  const providerRaw = String(transport?.provider || "sin proveedor").trim();
+  const provider = providerRaw.toLowerCase();
+
+  if (mode !== "coche") {
+    return providerRaw;
+  }
+  if (provider.includes("eficiente") || provider.includes("eco")) {
+    return `🚗 ${providerRaw}`;
+  }
+  if (provider.includes("estándar") || provider.includes("estandar")) {
+    return `🚙 ${providerRaw}`;
+  }
+  if (provider.includes("suv") || provider.includes("grande")) {
+    return `🚘 ${providerRaw}`;
+  }
+  if (provider.includes("van") || provider.includes("familiar")) {
+    return `🚐 ${providerRaw}`;
+  }
+  if (provider.includes("premium")) {
+    return `🏎️ ${providerRaw}`;
+  }
+  return `🚙 ${providerRaw}`;
+}
+
 function normalizeWeatherMap(weatherForecast) {
   const days = (weatherForecast && weatherForecast.days) || [];
   const map = new Map();
@@ -144,6 +233,195 @@ function weatherSummary(dayWeather) {
     return `${label} · ${parts.join(" · ")}`;
   }
   return label;
+}
+
+function googleMapsDirectionsUrl(origin, destination) {
+  const url = new URL("https://www.google.com/maps/dir/");
+  url.searchParams.set("api", "1");
+  url.searchParams.set("origin", origin);
+  url.searchParams.set("destination", destination);
+  url.searchParams.set("travelmode", "driving");
+  return url.toString();
+}
+
+function buildGoogleMapsPoint(point, fallback) {
+  if (
+    point &&
+    typeof point.lat === "number" &&
+    Number.isFinite(point.lat) &&
+    typeof point.lon === "number" &&
+    Number.isFinite(point.lon)
+  ) {
+    return `${point.lat},${point.lon}`;
+  }
+  return fallback;
+}
+
+function setRoadRouteGoogleMapsLink(origin, destination) {
+  const hasBoth = Boolean(origin && destination);
+  if (!hasBoth) {
+    refs.roadRouteGoogleMaps.classList.add("hidden");
+    refs.roadRouteGoogleMaps.href = "#";
+    return;
+  }
+  refs.roadRouteGoogleMaps.href = googleMapsDirectionsUrl(origin, destination);
+  refs.roadRouteGoogleMaps.classList.remove("hidden");
+}
+
+function setRoadRouteGoogleMapsLinkFromRouteData(data, fallbackOrigin, fallbackDestination) {
+  const originPoint = buildGoogleMapsPoint(data?.origin_point, fallbackOrigin);
+  const destinationPoint = buildGoogleMapsPoint(data?.destination_point, fallbackDestination);
+  setRoadRouteGoogleMapsLink(originPoint, destinationPoint);
+}
+
+function getItineraryContext() {
+  const itinerary = state.itinerary?.final_itinerary || null;
+  const trip = state.options?.trip_request || {};
+  return {
+    itinerary,
+    destination: String(trip.destination || "").trim(),
+  };
+}
+
+function buildDayEventsFromItinerary(itinerary, destination) {
+  const events = [];
+  (itinerary?.days || []).forEach((day, dayIndex) => {
+    const base = parseIsoDateLocal(String(day.date || ""));
+    if (!base) {
+      return;
+    }
+    const dayBlocks = (day.blocks || []).map((block) => String(block || "").trim()).filter(Boolean);
+    const start = new Date(base);
+    start.setHours(9, 0, 0, 0);
+    const end = new Date(base);
+    end.setHours(19, 0, 0, 0);
+    const details =
+      dayBlocks.length > 0
+        ? dayBlocks.map((block, idx) => `${idx + 1}. ${block}`).join("\n")
+        : "Plan de viaje sin bloques detallados.";
+    events.push({
+      title: `Itinerario ${destination || "viaje"} - ${String(day.date || dayIndex + 1)}`,
+      description: details,
+      location: destination || "",
+      start,
+      end,
+    });
+  });
+  return events;
+}
+
+function escapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
+function buildIcsCalendar(events) {
+  const now = compactDate(new Date());
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Travel Buddy//Itinerary//ES",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Travel Buddy Itinerario",
+  ];
+
+  events.forEach((event, idx) => {
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${now}-${idx}@travel-buddy.local`);
+    lines.push(`DTSTAMP:${now}`);
+    lines.push(`DTSTART:${compactDate(event.start)}`);
+    lines.push(`DTEND:${compactDate(event.end)}`);
+    lines.push(`SUMMARY:${escapeIcsText(event.title)}`);
+    lines.push(`DESCRIPTION:${escapeIcsText(event.description)}`);
+    if (event.location) {
+      lines.push(`LOCATION:${escapeIcsText(event.location)}`);
+    }
+    lines.push("END:VEVENT");
+  });
+
+  lines.push("END:VCALENDAR");
+  return `${lines.join("\r\n")}\r\n`;
+}
+
+function setItineraryActionsEnabled(enabled) {
+  refs.exportJsonButton.disabled = !enabled;
+  refs.exportIcsButton.disabled = !enabled;
+  refs.googleCalendarButton.disabled = !enabled;
+}
+
+function onExportItineraryJson() {
+  const { itinerary, destination } = getItineraryContext();
+  if (!itinerary) {
+    addMessage("Primero genera un itinerario para poder exportarlo.", "error");
+    return;
+  }
+  const payload = {
+    generated_at: new Date().toISOString(),
+    trip_request: state.options?.trip_request || {},
+    selected_bundle: state.selectedBundle || {},
+    final_itinerary: itinerary,
+  };
+  const dateToken = formatDate(new Date());
+  const destinationToken = safeFileToken(destination) || "destino";
+  const filename = `itinerario-${destinationToken}-${dateToken}.json`;
+  downloadTextFile(JSON.stringify(payload, null, 2), filename, "application/json;charset=utf-8");
+  addMessage("Itinerario exportado en JSON.", "info");
+}
+
+function onExportItineraryIcs() {
+  const { itinerary, destination } = getItineraryContext();
+  if (!itinerary) {
+    addMessage("Primero genera un itinerario para poder exportarlo.", "error");
+    return;
+  }
+  const events = buildDayEventsFromItinerary(itinerary, destination);
+  if (events.length === 0) {
+    addMessage("No hay días válidos para exportar a calendario.", "error");
+    return;
+  }
+  const content = buildIcsCalendar(events);
+  const dateToken = formatDate(new Date());
+  const destinationToken = safeFileToken(destination) || "destino";
+  const filename = `itinerario-${destinationToken}-${dateToken}.ics`;
+  downloadTextFile(content, filename, "text/calendar;charset=utf-8");
+  addMessage("Archivo .ics generado. Puedes importarlo en Google Calendar.", "info");
+}
+
+function onOpenGoogleCalendar() {
+  const { itinerary, destination } = getItineraryContext();
+  if (!itinerary) {
+    addMessage("Primero genera un itinerario para enviar a Google Calendar.", "error");
+    return;
+  }
+  const events = buildDayEventsFromItinerary(itinerary, destination);
+  if (events.length === 0) {
+    addMessage("No hay días válidos para enviar a Google Calendar.", "error");
+    return;
+  }
+
+  const maxTabs = 10;
+  const selectedEvents = events.slice(0, maxTabs);
+  selectedEvents.forEach((event) => {
+    const url = new URL("https://calendar.google.com/calendar/render");
+    url.searchParams.set("action", "TEMPLATE");
+    url.searchParams.set("text", event.title);
+    url.searchParams.set("dates", `${compactDate(event.start)}/${compactDate(event.end)}`);
+    url.searchParams.set("details", event.description);
+    if (event.location) {
+      url.searchParams.set("location", event.location);
+    }
+    window.open(url.toString(), "_blank", "noopener");
+  });
+
+  if (events.length > maxTabs) {
+    addMessage(`Se abrieron ${maxTabs} días en Google Calendar (límite por seguridad).`, "info");
+  } else {
+    addMessage(`Se abrieron ${events.length} días en Google Calendar.`, "info");
+  }
 }
 
 function setStep(stepName) {
@@ -321,6 +599,9 @@ function renderBundles() {
 
     const card = document.createElement("article");
     card.className = `bundle-card${isSelected ? " selected" : ""}`;
+    const transportLine = `${transportModeLabel(transport)} · ${transportProviderLabel(transport)} · ${
+      transport.currency || "EUR"
+    }`;
 
     const tags = (bundle.pros || [])
       .slice(0, 3)
@@ -335,9 +616,7 @@ function renderBundles() {
         </div>
         <span class="bundle-price">${formatPrice(bundle.total_estimated_cost_eur)}</span>
       </div>
-      <p class="bundle-row"><strong>Transporte:</strong> ${escapeHtml(
-        `${transport.mode || "n/a"} · ${transport.provider || "sin proveedor"} · ${transport.currency || "EUR"}`
-      )}</p>
+      <p class="bundle-row"><strong>Transporte:</strong> ${escapeHtml(transportLine)}</p>
       <p class="bundle-row"><strong>Hotel:</strong> ${escapeHtml(hotel.name || String(bundle.hotel_id || "Hotel"))}</p>
       <div class="bundle-tags">${tags}</div>
       <button class="bundle-action" type="button">${isSelected ? "Seleccionado" : "Seleccionar bundle"}</button>
@@ -397,6 +676,7 @@ function renderItinerary() {
   });
 
   refs.itinerarySection.classList.remove("hidden");
+  setItineraryActionsEnabled(true);
 }
 
 function ensureRoadRouteMap() {
@@ -487,6 +767,7 @@ function renderRoadRouteData(data) {
     refs.roadRouteSummary.textContent = `No hay ruta en coche disponible entre origen y destino. ${direct}`.trim();
   }
   renderRoadRouteWarnings(data.warnings || []);
+  setRoadRouteGoogleMapsLinkFromRouteData(data, data.origin || "", data.destination || "");
 }
 
 function resetRoadRouteView() {
@@ -494,13 +775,16 @@ function resetRoadRouteView() {
   refs.roadRouteSection.classList.add("hidden");
   refs.roadRouteSummary.textContent = "";
   refs.roadRouteWarnings.innerHTML = "";
+  setRoadRouteGoogleMapsLink("", "");
   clearRoadRouteLayers();
 }
 
 async function maybeLoadRoadRouteForCar() {
   const trip = state.options?.trip_request || {};
-  const mode = String(trip.transport_mode || "").toLowerCase();
-  if (mode !== "coche") {
+  const hasCarTransport = (state.options?.transport_options?.transports || []).some(
+    (item) => String(item?.mode || "").toLowerCase() === "coche"
+  );
+  if (!hasCarTransport) {
     resetRoadRouteView();
     return;
   }
@@ -509,9 +793,11 @@ async function maybeLoadRoadRouteForCar() {
   const destination = String(trip.destination || "").trim();
   if (!origin || !destination) {
     refs.roadRouteSection.classList.add("hidden");
+    setRoadRouteGoogleMapsLink("", "");
     return;
   }
 
+  setRoadRouteGoogleMapsLink(origin, destination);
   refs.roadRouteSection.classList.remove("hidden");
   refs.roadRouteSummary.textContent = "Calculando ruta en coche...";
   renderRoadRouteWarnings([]);
@@ -581,6 +867,7 @@ async function onSubmitTrip(event) {
   refs.bundlesGrid.innerHTML = "";
   refs.itineraryDays.innerHTML = "";
   refs.generateButton.disabled = true;
+  setItineraryActionsEnabled(false);
   setStep("options");
 
   const payload = {
@@ -588,7 +875,6 @@ async function onSubmitTrip(event) {
     destination: document.querySelector("#destination").value.trim(),
     start_date: document.querySelector("#start_date").value,
     end_date: document.querySelector("#end_date").value,
-    transport_mode: document.querySelector('input[name="transport_mode"]:checked').value,
     interests: document.querySelector("#interests").value,
   };
 
@@ -634,6 +920,7 @@ async function onGenerateItinerary() {
     (data.notices || []).forEach((note) => addMessage(note, "info"));
     addMessage("Itinerario generado con ItineraryAgent.", "info");
   } catch (error) {
+    setItineraryActionsEnabled(false);
     addMessage(`No se pudo generar itinerario: ${error.message}`, "error");
   } finally {
     setLoading(refs.generateButton, false);
@@ -643,8 +930,12 @@ async function onGenerateItinerary() {
 function bootstrap() {
   setDefaultDates();
   setStep("options");
+  setItineraryActionsEnabled(false);
   refs.form.addEventListener("submit", onSubmitTrip);
   refs.generateButton.addEventListener("click", onGenerateItinerary);
+  refs.exportJsonButton.addEventListener("click", onExportItineraryJson);
+  refs.exportIcsButton.addEventListener("click", onExportItineraryIcs);
+  refs.googleCalendarButton.addEventListener("click", onOpenGoogleCalendar);
   refs.budgetMin.addEventListener("input", () => onBudgetSliderChange("min"));
   refs.budgetMax.addEventListener("input", () => onBudgetSliderChange("max"));
 }
