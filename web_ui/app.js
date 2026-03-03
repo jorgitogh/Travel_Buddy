@@ -32,9 +32,7 @@ const refs = {
   itinerarySection: document.querySelector("#itinerary-section"),
   itinerarySummary: document.querySelector("#itinerary-summary"),
   itineraryDays: document.querySelector("#itinerary-days"),
-  exportJsonButton: document.querySelector("#export-json-btn"),
-  exportIcsButton: document.querySelector("#export-ics-btn"),
-  googleCalendarButton: document.querySelector("#google-calendar-btn"),
+  calendarExport: document.querySelector("#calendar-export"),
   roadRouteSection: document.querySelector("#road-route-section"),
   roadRouteView: document.querySelector("#road-route-view"),
   roadRouteSummary: document.querySelector("#road-route-summary"),
@@ -56,6 +54,192 @@ const WEATHER_ICON = {
   fog: "🌫️",
   neutral: "🧭",
 };
+
+// ─── Calendar Export (RFC 5545) ──────────────────────────────────────────────
+
+/**
+ * Escapes special characters in iCalendar property values per RFC 5545 §3.3.11.
+ */
+function escapeICSValue(str) {
+  return String(str || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n|\r\n/g, "\\n")
+    .replace(/\r/g, "");
+}
+
+/**
+ * Folds long iCalendar lines per RFC 5545 §3.1:
+ * lines MUST NOT be longer than 75 octets, folded with CRLF + single SPACE.
+ */
+function foldICSLine(line) {
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 75) return line;
+
+  const result = [];
+  let current = "";
+  let byteCount = 0;
+
+  for (const char of line) {
+    const charLen = encoder.encode(char).length;
+    if (byteCount + charLen > 75) {
+      result.push(current);
+      current = " " + char;
+      byteCount = 1 + charLen;
+    } else {
+      current += char;
+      byteCount += charLen;
+    }
+  }
+  if (current) result.push(current);
+  return result.join("\r\n");
+}
+
+/**
+ * Returns a DTSTAMP-format UTC timestamp string (e.g. 20260303T120000Z).
+ */
+function nowDTSTAMP() {
+  return new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
+/**
+ * Parses an ISO date string and returns the next day in YYYYMMDD format.
+ */
+function nextDayCompact(isoDate) {
+  const d = new Date(isoDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+/**
+ * Generates a fully RFC 5545–compliant VCALENDAR string with one VEVENT per
+ * itinerary day. Uses DATE (all-day) events so no timezone handling is needed.
+ */
+function generateICS(itinerary, tripRequest) {
+  const destination = escapeICSValue(tripRequest?.destination || "Destino");
+  const dtstamp = nowDTSTAMP();
+  const prodId = "-//Travel Buddy//Travel Buddy 1.0//ES";
+
+  const header = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    `PRODID:${prodId}`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:Viaje a ${destination}`,
+    "X-WR-CALDESC:Itinerario generado por Travel Buddy",
+  ];
+
+  const events = (itinerary?.days || []).flatMap((day, idx) => {
+    const dateCompact = (day.date || "").replace(/-/g, "");
+    if (!dateCompact) return [];
+
+    const dtend = nextDayCompact(day.date);
+    const summary = escapeICSValue(`Día ${idx + 1} en ${destination}`);
+    const blocks = (day.blocks || []).join("\n");
+    const description = escapeICSValue(blocks);
+    const uid = `travelbuddy-${dateCompact}-${idx}@local`;
+    const location = escapeICSValue(tripRequest?.destination || "");
+
+    return [
+      "BEGIN:VEVENT",
+      foldICSLine(`UID:${uid}`),
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART;VALUE=DATE:${dateCompact}`,
+      `DTEND;VALUE=DATE:${dtend}`,
+      foldICSLine(`SUMMARY:${summary}`),
+      foldICSLine(`DESCRIPTION:${description}`),
+      ...(location ? [foldICSLine(`LOCATION:${location}`)] : []),
+      "TRANSP:TRANSPARENT",
+      "END:VEVENT",
+    ];
+  });
+
+  const footer = ["END:VCALENDAR"];
+
+  return [...header, ...events, ...footer].join("\r\n");
+}
+
+/**
+ * Triggers a browser download of an .ics file.
+ */
+function downloadICS(itinerary, tripRequest) {
+  const content = generateICS(itinerary, tripRequest);
+  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const destination = (tripRequest?.destination || "viaje").toLowerCase().replace(/\s+/g, "-");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `itinerario-${destination}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/**
+ * Opens one Google Calendar "Add Event" tab per itinerary day.
+ * Staggered with 700 ms delay to reduce popup-blocker interference.
+ * Falls back to a single overview event if the browser blocks popups.
+ */
+function openGoogleCalendarEvents(itinerary, tripRequest) {
+  const destination = tripRequest?.destination || "Destino";
+  const days = itinerary?.days || [];
+  if (!days.length) return;
+
+  let blocked = false;
+
+  days.forEach((day, idx) => {
+    setTimeout(() => {
+      const dateCompact = (day.date || "").replace(/-/g, "");
+      const dtend = nextDayCompact(day.date);
+      const title = `Día ${idx + 1} en ${destination}`;
+      const details = (day.blocks || []).join("\n");
+
+      const params = new URLSearchParams({
+        action: "TEMPLATE",
+        text: title,
+        dates: `${dateCompact}/${dtend}`,
+        details,
+        sf: "true",
+        output: "xml",
+      });
+
+      const win = window.open(
+        `https://www.google.com/calendar/render?${params.toString()}`,
+        "_blank"
+      );
+
+      if (!win && !blocked) {
+        blocked = true;
+        addMessage(
+          "El navegador bloqueó las ventanas emergentes. Permite ventanas emergentes para este sitio y vuelve a intentarlo, o usa la opción iCalendar para importar manualmente.",
+          "error"
+        );
+      }
+    }, idx * 700);
+  });
+
+  if (days.length > 1) {
+    addMessage(
+      `Se abrirán ${days.length} pestañas de Google Calendar, una por día. Si el navegador las bloquea, permite las ventanas emergentes e inténtalo de nuevo.`,
+      "info"
+    );
+  }
+}
+
+function renderCalendarExport() {
+  if (!refs.calendarExport) return;
+  refs.calendarExport.classList.remove("hidden");
+}
+
+function hideCalendarExport() {
+  if (!refs.calendarExport) return;
+  refs.calendarExport.classList.add("hidden");
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function setDefaultDates() {
   const start = new Date();
@@ -628,6 +812,7 @@ function renderBundles() {
       state.selectedBundle = bundle;
       setStep("bundle");
       renderBundles();
+      updateGmapsLink();
     });
 
     refs.bundlesGrid.appendChild(card);
@@ -676,8 +861,10 @@ function renderItinerary() {
   });
 
   refs.itinerarySection.classList.remove("hidden");
-  setItineraryActionsEnabled(true);
+  renderCalendarExport();
 }
+
+// ─── Road route ──────────────────────────────────────────────────────────────
 
 function ensureRoadRouteMap() {
   if (state.roadRoute.map || typeof window.L === "undefined") {
@@ -711,6 +898,67 @@ function renderRoadRouteWarnings(warnings) {
     item.textContent = warning;
     refs.roadRouteWarnings.appendChild(item);
   });
+}
+
+// ─── Fuel estimation ─────────────────────────────────────────────────────────
+// Static assumptions (European averages, adjustable here):
+const FUEL_L_PER_100KM = 7.0;   // litres per 100 km (mixed urban+highway)
+const FUEL_PRICE_EUR_L  = 1.65; // € per litre (Eurostat EU avg, 2024)
+
+/**
+ * Returns a fuel estimation object for a given road distance.
+ * All math is static/deterministic — no external calls.
+ */
+function estimateFuel(distanceKm) {
+  if (typeof distanceKm !== "number" || distanceKm <= 0) return null;
+  const litres     = (distanceKm / 100) * FUEL_L_PER_100KM;
+  const costEur    = litres * FUEL_PRICE_EUR_L;
+  return {
+    litres:        Math.round(litres  * 10) / 10,   // 1 decimal
+    costEur:       Math.round(costEur * 100) / 100, // 2 decimals
+    lPer100km:     FUEL_L_PER_100KM,
+    pricePerLitre: FUEL_PRICE_EUR_L,
+  };
+}
+
+/**
+ * Builds and updates the Google Maps deep-link using the road route data
+ * already stored in state.roadRoute.data. Safe to call at any time;
+ * does nothing if there is no route data yet.
+ */
+function updateGmapsLink(routeData) {
+  const data     = routeData || state.roadRoute.data;
+  const gmapsDiv  = document.querySelector("#road-route-gmaps");
+  const gmapsLink = document.querySelector("#road-route-gmaps-link");
+
+  if (!gmapsDiv || !gmapsLink || !data?.origin_point) {
+    if (gmapsDiv) gmapsDiv.classList.add("hidden");
+    return;
+  }
+
+  const orig = `${data.origin_point.lat},${data.origin_point.lon}`;
+
+  const hotelId    = state.selectedBundle?.hotel_id;
+  const hotels     = state.options?.hotel_options?.hotels || [];
+  const hotel      = hotels.find((h) => String(h.id) === String(hotelId));
+  const hotelQuery = [hotel?.name, hotel?.area || state.options?.trip_request?.destination]
+    .filter(Boolean)
+    .join(", ");
+
+  const dest = hotelQuery
+    ? encodeURIComponent(hotelQuery)
+    : data.destination_point
+      ? `${data.destination_point.lat},${data.destination_point.lon}`
+      : null;
+
+  if (!dest) {
+    gmapsDiv.classList.add("hidden");
+    return;
+  }
+
+  gmapsLink.href  = `https://www.google.com/maps/dir/?api=1&origin=${orig}&destination=${dest}&travelmode=driving`;
+  gmapsLink.title = hotelQuery ? `Ir a ${hotelQuery}` : "Abrir ruta en Google Maps";
+  gmapsDiv.classList.remove("hidden");
 }
 
 function renderRoadRouteData(data) {
@@ -758,13 +1006,56 @@ function renderRoadRouteData(data) {
   }
 
   state.roadRoute.map.invalidateSize();
+
+  // Google Maps deep-link — updated here and again when a bundle is selected
+  updateGmapsLink(data);
+
   if (data.reachable_by_car) {
+    const source = data.route_source === "osrm" ? "OSRM" : "estimación";
     refs.roadRouteSummary.textContent =
-      `Ruta en coche: ${formatDistance(data.distance_km)} · ${formatMinutes(data.duration_min)} ` +
-      `(${data.route_source === "osrm" ? "OSRM" : "estimación"})`;
+      `Ruta en coche: ${formatDistance(data.distance_km)} · ${formatMinutes(data.duration_min)} (${source})`;
+
+    // Fuel estimation
+    const fuel = estimateFuel(data.distance_km);
+    const fuelEl = document.querySelector("#road-route-fuel");
+    if (fuelEl && fuel) {
+      fuelEl.innerHTML = `
+        <div class="fuel-grid">
+          <div class="fuel-stat">
+            <span class="fuel-stat-icon">⛽</span>
+            <div>
+              <p class="fuel-stat-label">Combustible estimado</p>
+              <p class="fuel-stat-value">${fuel.litres} L</p>
+            </div>
+          </div>
+          <div class="fuel-stat">
+            <span class="fuel-stat-icon">💶</span>
+            <div>
+              <p class="fuel-stat-label">Coste aproximado</p>
+              <p class="fuel-stat-value">${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(fuel.costEur)}</p>
+            </div>
+          </div>
+          <div class="fuel-stat fuel-stat--wide">
+            <span class="fuel-stat-icon">📐</span>
+            <div>
+              <p class="fuel-stat-label">Cálculo</p>
+              <p class="fuel-stat-meta">${formatDistance(data.distance_km)} × ${fuel.lPer100km} L/100 km = <strong>${fuel.litres} L</strong> · ${fuel.lPer100km} L × ${fuel.pricePerLitre} €/L = <strong>${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(fuel.costEur)}</strong></p>
+              <p class="fuel-stat-disclaimer">Consumo medio estimado (${fuel.lPer100km} L/100 km) · Precio referencia ${fuel.pricePerLitre} €/L</p>
+            </div>
+          </div>
+        </div>
+      `;
+      fuelEl.classList.remove("hidden");
+    }
   } else {
-    const direct = typeof data.direct_distance_km === "number" ? `Distancia en línea recta: ${formatDistance(data.direct_distance_km)}.` : "";
-    refs.roadRouteSummary.textContent = `No hay ruta en coche disponible entre origen y destino. ${direct}`.trim();
+    const direct = typeof data.direct_distance_km === "number"
+      ? `Distancia en línea recta: ${formatDistance(data.direct_distance_km)}.`
+      : "";
+    refs.roadRouteSummary.textContent =
+      `No hay ruta en coche disponible entre origen y destino. ${direct}`.trim();
+
+    const fuelEl = document.querySelector("#road-route-fuel");
+    if (fuelEl) fuelEl.classList.add("hidden");
   }
   renderRoadRouteWarnings(data.warnings || []);
   setRoadRouteGoogleMapsLinkFromRouteData(data, data.origin || "", data.destination || "");
@@ -775,7 +1066,10 @@ function resetRoadRouteView() {
   refs.roadRouteSection.classList.add("hidden");
   refs.roadRouteSummary.textContent = "";
   refs.roadRouteWarnings.innerHTML = "";
-  setRoadRouteGoogleMapsLink("", "");
+  const fuelEl = document.querySelector("#road-route-fuel");
+  if (fuelEl) fuelEl.classList.add("hidden");
+  const gmapsDiv = document.querySelector("#road-route-gmaps");
+  if (gmapsDiv) gmapsDiv.classList.add("hidden");
   clearRoadRouteLayers();
 }
 
@@ -818,6 +1112,8 @@ async function maybeLoadRoadRouteForCar() {
   }
 }
 
+// ─── Network ─────────────────────────────────────────────────────────────────
+
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
@@ -850,6 +1146,8 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+// ─── Event handlers ───────────────────────────────────────────────────────────
+
 async function onSubmitTrip(event) {
   event.preventDefault();
   clearMessages();
@@ -859,6 +1157,7 @@ async function onSubmitTrip(event) {
   state.selectedBundleId = "";
   state.itinerary = null;
   resetRoadRouteView();
+  hideCalendarExport();
 
   refs.metricsSection.classList.add("hidden");
   refs.bundlesSection.classList.add("hidden");
@@ -908,6 +1207,8 @@ async function onGenerateItinerary() {
 
   setStep("itinerary");
   setLoading(refs.generateButton, true, "Generando itinerario...");
+  hideCalendarExport();
+
   try {
     const payload = {
       trip_request: state.options.trip_request,
@@ -927,6 +1228,8 @@ async function onGenerateItinerary() {
   }
 }
 
+// ─── Bootstrap ───────────────────────────────────────────────────────────────
+
 function bootstrap() {
   setDefaultDates();
   setStep("options");
@@ -938,6 +1241,28 @@ function bootstrap() {
   refs.googleCalendarButton.addEventListener("click", onOpenGoogleCalendar);
   refs.budgetMin.addEventListener("input", () => onBudgetSliderChange("min"));
   refs.budgetMax.addEventListener("input", () => onBudgetSliderChange("max"));
+
+  // Calendar export buttons
+  document.querySelector("#cal-google")?.addEventListener("click", () => {
+    const itinerary = state.itinerary?.final_itinerary;
+    const trip = state.options?.trip_request;
+    if (!itinerary) return;
+    openGoogleCalendarEvents(itinerary, trip);
+  });
+
+  document.querySelector("#cal-outlook")?.addEventListener("click", () => {
+    const itinerary = state.itinerary?.final_itinerary;
+    const trip = state.options?.trip_request;
+    if (!itinerary) return;
+    downloadICS(itinerary, trip);
+  });
+
+  document.querySelector("#cal-ical")?.addEventListener("click", () => {
+    const itinerary = state.itinerary?.final_itinerary;
+    const trip = state.options?.trip_request;
+    if (!itinerary) return;
+    downloadICS(itinerary, trip);
+  });
 }
 
 bootstrap();
