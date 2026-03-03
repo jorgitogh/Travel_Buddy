@@ -299,6 +299,43 @@ function formatMinutes(valueMin) {
   return `${hours} h ${mins} min`;
 }
 
+function transportModeLabel(transport) {
+  const mode = String(transport?.mode || "").toLowerCase();
+  if (mode === "avion") {
+    return "✈️ Avión";
+  }
+  if (mode === "coche") {
+    return "🚗 Coche";
+  }
+  return "🧭 Transporte";
+}
+
+function transportProviderLabel(transport) {
+  const mode = String(transport?.mode || "").toLowerCase();
+  const providerRaw = String(transport?.provider || "sin proveedor").trim();
+  const provider = providerRaw.toLowerCase();
+
+  if (mode !== "coche") {
+    return providerRaw;
+  }
+  if (provider.includes("eficiente") || provider.includes("eco")) {
+    return `🚗 ${providerRaw}`;
+  }
+  if (provider.includes("estándar") || provider.includes("estandar")) {
+    return `🚙 ${providerRaw}`;
+  }
+  if (provider.includes("suv") || provider.includes("grande")) {
+    return `🚘 ${providerRaw}`;
+  }
+  if (provider.includes("van") || provider.includes("familiar")) {
+    return `🚐 ${providerRaw}`;
+  }
+  if (provider.includes("premium")) {
+    return `🏎️ ${providerRaw}`;
+  }
+  return `🚙 ${providerRaw}`;
+}
+
 function normalizeWeatherMap(weatherForecast) {
   const days = (weatherForecast && weatherForecast.days) || [];
   const map = new Map();
@@ -374,6 +411,16 @@ function getTransportAndHotelMaps() {
     transportById: new Map(transportItems),
     hotelById: new Map(hotelItems),
   };
+}
+
+function getSelectedTransport() {
+  const selectedBundle = state.selectedBundle;
+  if (!selectedBundle) {
+    return null;
+  }
+  const transports = state.options?.transport_options?.transports || [];
+  const targetId = String(selectedBundle.transport_id || "");
+  return transports.find((item) => String(item?.id || "") === targetId) || null;
 }
 
 function setupBudgetFilter() {
@@ -508,6 +555,9 @@ function renderBundles() {
 
     const card = document.createElement("article");
     card.className = `bundle-card${isSelected ? " selected" : ""}`;
+    const transportLine = `${transportModeLabel(transport)} · ${transportProviderLabel(transport)} · ${
+      transport.currency || "EUR"
+    }`;
 
     const tags = (bundle.pros || [])
       .slice(0, 3)
@@ -522,21 +572,19 @@ function renderBundles() {
         </div>
         <span class="bundle-price">${formatPrice(bundle.total_estimated_cost_eur)}</span>
       </div>
-      <p class="bundle-row"><strong>Transporte:</strong> ${escapeHtml(
-        `${transport.mode || "n/a"} · ${transport.provider || "sin proveedor"} · ${transport.currency || "EUR"}`
-      )}</p>
+      <p class="bundle-row"><strong>Transporte:</strong> ${escapeHtml(transportLine)}</p>
       <p class="bundle-row"><strong>Hotel:</strong> ${escapeHtml(hotel.name || String(bundle.hotel_id || "Hotel"))}</p>
       <div class="bundle-tags">${tags}</div>
       <button class="bundle-action" type="button">${isSelected ? "Seleccionado" : "Seleccionar bundle"}</button>
     `;
 
     const actionButton = card.querySelector(".bundle-action");
-    actionButton.addEventListener("click", () => {
+    actionButton.addEventListener("click", async () => {
       state.selectedBundleId = bundleId;
       state.selectedBundle = bundle;
       setStep("bundle");
       renderBundles();
-      updateGmapsLink();
+      await maybeLoadRoadRouteForCar();
     });
 
     refs.bundlesGrid.appendChild(card);
@@ -651,37 +699,20 @@ function estimateFuel(distanceKm) {
  * does nothing if there is no route data yet.
  */
 function updateGmapsLink(routeData) {
-  const data     = routeData || state.roadRoute.data;
+  const data = routeData || state.roadRoute.data;
   const gmapsDiv  = document.querySelector("#road-route-gmaps");
   const gmapsLink = document.querySelector("#road-route-gmaps-link");
 
-  if (!gmapsDiv || !gmapsLink || !data?.origin_point) {
+  if (!gmapsDiv || !gmapsLink || !data?.origin_point || !data?.destination_point) {
     if (gmapsDiv) gmapsDiv.classList.add("hidden");
     return;
   }
 
   const orig = `${data.origin_point.lat},${data.origin_point.lon}`;
-
-  const hotelId    = state.selectedBundle?.hotel_id;
-  const hotels     = state.options?.hotel_options?.hotels || [];
-  const hotel      = hotels.find((h) => String(h.id) === String(hotelId));
-  const hotelQuery = [hotel?.name, hotel?.area || state.options?.trip_request?.destination]
-    .filter(Boolean)
-    .join(", ");
-
-  const dest = hotelQuery
-    ? encodeURIComponent(hotelQuery)
-    : data.destination_point
-      ? `${data.destination_point.lat},${data.destination_point.lon}`
-      : null;
-
-  if (!dest) {
-    gmapsDiv.classList.add("hidden");
-    return;
-  }
+  const dest = `${data.destination_point.lat},${data.destination_point.lon}`;
 
   gmapsLink.href  = `https://www.google.com/maps/dir/?api=1&origin=${orig}&destination=${dest}&travelmode=driving`;
-  gmapsLink.title = hotelQuery ? `Ir a ${hotelQuery}` : "Abrir ruta en Google Maps";
+  gmapsLink.title = "Abrir ruta origen-destino en Google Maps";
   gmapsDiv.classList.remove("hidden");
 }
 
@@ -798,8 +829,9 @@ function resetRoadRouteView() {
 
 async function maybeLoadRoadRouteForCar() {
   const trip = state.options?.trip_request || {};
-  const mode = String(trip.transport_mode || "").toLowerCase();
-  if (mode !== "coche") {
+  const selectedTransport = getSelectedTransport();
+  const isSelectedCarBundle = String(selectedTransport?.mode || "").toLowerCase() === "coche";
+  if (!isSelectedCarBundle) {
     resetRoadRouteView();
     return;
   }
@@ -821,7 +853,7 @@ async function maybeLoadRoadRouteForCar() {
     renderRoadRouteData(data);
     if (!data.reachable_by_car) {
       addMessage(
-        "Seguridad: no se ha encontrado ruta en coche entre origen y destino. Revisa el trayecto o cambia el modo de transporte.",
+        "Seguridad: no se ha encontrado ruta en coche entre origen y destino. Revisa el trayecto o elige un bundle de vuelo.",
         "error"
       );
     }
@@ -892,7 +924,6 @@ async function onSubmitTrip(event) {
     destination: document.querySelector("#destination").value.trim(),
     start_date: document.querySelector("#start_date").value,
     end_date: document.querySelector("#end_date").value,
-    transport_mode: document.querySelector('input[name="transport_mode"]:checked').value,
     interests: document.querySelector("#interests").value,
   };
 

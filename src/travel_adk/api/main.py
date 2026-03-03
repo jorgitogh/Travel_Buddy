@@ -6,7 +6,7 @@ import os
 from datetime import date
 from pathlib import Path
 from time import monotonic
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import requests
@@ -16,12 +16,12 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
-from travel_adk.agents.bundle_builder_agent.bundle_builder_agent import build_bundle_builder_agent
 from travel_adk.agents.hotel_agent.hotel_agent import build_hotel_agent
 from travel_adk.agents.itinerary_agent.itinerary_agent import build_itinerary_planner_agent
 from travel_adk.agents.itinerary_agent.tools import get_weather_forecast
 from travel_adk.agents.planner_agent.planner_agent import build_planner_agent
 from travel_adk.agents.transport_agent.transport_agent import build_transport_agent
+from travel_adk.agents.transport_agent.tools import search_transport_options_from_trip
 from travel_adk.config.settings import load_environment
 from travel_adk.state.keys import (
     CANDIDATE_BUNDLES_JSON,
@@ -367,12 +367,317 @@ def _route_points_osrm(points: List[Dict[str, Any]], mode: str) -> Optional[Dict
         return None
 
 
+def _read_float_env(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return max(minimum, min(value, maximum))
+
+
+def _number_or_none(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return max(minimum, min(value, maximum))
+
+
+async def _build_car_transport_options_async(trip_request: Dict[str, Any]) -> tuple[List[Dict[str, Any]], List[str]]:
+    origin = str(trip_request.get("origin") or "").strip()
+    destination = str(trip_request.get("destination") or "").strip()
+    start_date = str(trip_request.get("start_date") or "")
+    end_date = str(trip_request.get("end_date") or "")
+    notices: List[str] = []
+    options: List[Dict[str, Any]] = []
+
+    if not origin or not destination:
+        notices.append("No se pudo estimar coche: faltan origen/destino.")
+        return options, notices
+
+    origin_geo, destination_geo = await asyncio.gather(
+        asyncio.to_thread(_geocode_place, origin),
+        asyncio.to_thread(_geocode_place, destination),
+    )
+    if not origin_geo or not destination_geo:
+        notices.append("No se pudo geolocalizar origen/destino para estimar trayecto en coche.")
+        return options, notices
+
+    route = await asyncio.to_thread(_route_points_osrm, [origin_geo, destination_geo], "driving")
+    has_valid_road_route = route is not None
+    if route:
+        one_way_km = float(route.get("total_distance_km", 0.0))
+        one_way_min = float(route.get("total_duration_min", 0.0))
+    else:
+        notices.append(
+            "No se pudo calcular ruta por carretera con OSRM; se usa distancia en línea recta para estimación de gasolina."
+        )
+        one_way_km = _haversine_km(
+            float(origin_geo["lat"]),
+            float(origin_geo["lon"]),
+            float(destination_geo["lat"]),
+            float(destination_geo["lon"]),
+        )
+        one_way_min = (one_way_km / 70.0) * 60.0
+
+    fuel_price_eur_l = _read_float_env("CAR_FUEL_PRICE_EUR_PER_L", default=1.65, minimum=0.6, maximum=5.0)
+    roundtrip_factor = _read_float_env("CAR_ROUNDTRIP_MULTIPLIER", default=2.0, minimum=1.0, maximum=2.5)
+    max_cars = _int_env("TRAVEL_MAX_CAR_OPTIONS", default=3, minimum=1, maximum=5)
+
+    profile_consumptions: List[tuple[str, str, float]] = [
+        (
+            "C1",
+            "Coche eficiente",
+            _read_float_env("CAR_FUEL_L_PER_100KM_ECO", default=5.4, minimum=3.0, maximum=25.0),
+        ),
+        (
+            "C2",
+            "Coche estándar",
+            _read_float_env(
+                "CAR_FUEL_L_PER_100KM_STANDARD",
+                default=_read_float_env("CAR_FUEL_L_PER_100KM", default=6.8, minimum=3.0, maximum=25.0),
+                minimum=3.0,
+                maximum=25.0,
+            ),
+        ),
+        (
+            "C3",
+            "SUV / grande",
+            _read_float_env("CAR_FUEL_L_PER_100KM_SUV", default=8.9, minimum=3.0, maximum=25.0),
+        ),
+        (
+            "C4",
+            "Van / familiar",
+            _read_float_env("CAR_FUEL_L_PER_100KM_VAN", default=9.8, minimum=3.0, maximum=25.0),
+        ),
+        (
+            "C5",
+            "Premium",
+            _read_float_env("CAR_FUEL_L_PER_100KM_PREMIUM", default=10.8, minimum=3.0, maximum=25.0),
+        ),
+    ][:max_cars]
+
+    roundtrip_km = one_way_km * roundtrip_factor
+    roundtrip_h = (one_way_min * roundtrip_factor) / 60.0
+    route_note = "Ruta validada por carretera." if has_valid_road_route else "Ruta no validada; estimación en línea recta."
+
+    for option_id, label, liters_per_100_km in profile_consumptions:
+        fuel_liters = (roundtrip_km / 100.0) * liters_per_100_km
+        fuel_total_eur = round(fuel_liters * fuel_price_eur_l, 2)
+        options.append(
+            {
+                "id": option_id,
+                "mode": "coche",
+                "provider": label,
+                "departure_date": start_date,
+                "arrival_date": end_date,
+                "total_price": fuel_total_eur,
+                "currency": "EUR",
+                "notes": (
+                    f"Ida/vuelta aprox: {roundtrip_km:.1f} km, {roundtrip_h:.1f} h. "
+                    f"Consumo {liters_per_100_km:.1f}L/100km, combustible {fuel_price_eur_l:.2f} €/L. {route_note}"
+                ),
+            }
+        )
+
+    return options, notices
+
+
+def _select_hotels_for_bundles(hotel_options: Dict[str, Any]) -> List[Dict[str, Any]]:
+    hotels = (hotel_options or {}).get("hotels", []) or []
+    if not hotels:
+        return []
+    max_hotels = _int_env("TRAVEL_MAX_HOTELS_FOR_BUNDLES", default=3, minimum=1, maximum=6)
+    return sorted(
+        hotels,
+        key=lambda hotel: (
+            _number_or_none(hotel.get("price_total")) is None,
+            _number_or_none(hotel.get("price_total")) or 10**12,
+        ),
+    )[:max_hotels]
+
+
+def _build_dual_mode_bundles(
+    transport_options: Dict[str, Any],
+    hotel_options: Dict[str, Any],
+) -> tuple[Dict[str, Any], List[str]]:
+    notices: List[str] = []
+    bundles: List[Dict[str, Any]] = []
+
+    hotels = _select_hotels_for_bundles(hotel_options)
+    if not hotels:
+        notices.append("No se encontraron hoteles para construir bundles comparables (coche vs avión).")
+        return {"bundles": []}, notices
+
+    transports = (transport_options or {}).get("transports", []) or []
+
+    def _pick_transports(mode: str, max_items: int) -> List[Dict[str, Any]]:
+        mode_items = [x for x in transports if str(x.get("mode") or "").lower() == mode]
+        if not mode_items:
+            return []
+        return sorted(
+            mode_items,
+            key=lambda item: (
+                _number_or_none(item.get("total_price")) is None,
+                _number_or_none(item.get("total_price")) or 10**12,
+            ),
+        )[:max_items]
+
+    max_car_bundles = _int_env("TRAVEL_MAX_CAR_BUNDLES", default=3, minimum=1, maximum=5)
+    max_flight_bundles = _int_env("TRAVEL_MAX_FLIGHT_BUNDLES", default=3, minimum=1, maximum=5)
+    car_items = _pick_transports("coche", max_car_bundles)
+    flight_items = _pick_transports("avion", max_flight_bundles)
+
+    if not car_items:
+        notices.append("No se pudo generar opción de coche; solo se mostrará vuelo + hotel.")
+    if not flight_items:
+        notices.append("No se encontraron vuelos; solo se mostrará coche + hotel.")
+
+    def _bundle_total(transport: Dict[str, Any], hotel_price: Optional[float]) -> Optional[float]:
+        transport_price = _number_or_none(transport.get("total_price"))
+        if transport_price is None or hotel_price is None:
+            return None
+        return round(transport_price + hotel_price, 2)
+
+    def _build_mode_candidates(
+        *,
+        mode_items: List[Dict[str, Any]],
+        label_prefix: str,
+        pros: List[str],
+        cons: List[str],
+        max_bundles: int,
+    ) -> List[Dict[str, Any]]:
+        candidates: List[Dict[str, Any]] = []
+        for transport in mode_items:
+            for hotel in hotels:
+                hotel_id = str(hotel.get("id") or "")
+                hotel_name = str(hotel.get("name") or hotel_id or "Hotel")
+                hotel_price = _number_or_none(hotel.get("price_total"))
+                total = _bundle_total(transport, hotel_price)
+                candidates.append(
+                    {
+                        "transport_id": str(transport.get("id") or ""),
+                        "hotel_id": hotel_id,
+                        "hotel_name": hotel_name,
+                        "total_estimated_cost_eur": total,
+                        "pros": [*pros, f"Hotel: {hotel_name}"],
+                        "cons": cons,
+                    }
+                )
+        candidates.sort(
+            key=lambda item: (
+                _number_or_none(item.get("total_estimated_cost_eur")) is None,
+                _number_or_none(item.get("total_estimated_cost_eur")) or 10**12,
+            )
+        )
+        trimmed = candidates[:max_bundles]
+        for idx, item in enumerate(trimmed, start=1):
+            item["label"] = f"{label_prefix} · Opción {idx} · {item['hotel_name']}"
+        return trimmed
+
+    car_candidates = _build_mode_candidates(
+        mode_items=car_items,
+        label_prefix="Road Trip + Hotel",
+        pros=[
+            "Más flexibilidad de horarios y paradas",
+            "Incluye estimación de gasolina",
+        ],
+        cons=[
+            "Más horas de desplazamiento",
+        ],
+        max_bundles=max_car_bundles,
+    )
+    flight_candidates = _build_mode_candidates(
+        mode_items=flight_items,
+        label_prefix="Vuelo + Hotel",
+        pros=[
+            "Menor tiempo de viaje",
+            "Comparación directa con opción de coche",
+        ],
+        cons=[
+            "Menos flexibilidad de cambios en ruta",
+        ],
+        max_bundles=max_flight_bundles,
+    )
+
+    bundle_counter = 1
+    for candidate in [*car_candidates, *flight_candidates]:
+        bundles.append(
+            {
+                "bundle_id": f"B{bundle_counter}",
+                "label": candidate["label"],
+                "transport_id": candidate["transport_id"],
+                "hotel_id": candidate["hotel_id"],
+                "total_estimated_cost_eur": candidate["total_estimated_cost_eur"],
+                "pros": candidate["pros"],
+                "cons": candidate["cons"],
+            }
+        )
+        bundle_counter += 1
+
+    return {"bundles": bundles}, notices
+
+
+async def _ensure_min_flight_options_async(
+    *,
+    trip_request: Dict[str, Any],
+    current_flights: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], Optional[str]]:
+    min_flights = _int_env("TRAVEL_MIN_FLIGHT_OPTIONS", default=2, minimum=1, maximum=5)
+    if len(current_flights) >= min_flights:
+        return current_flights, None
+
+    fallback_limit = max(
+        _int_env("TRAVEL_MAX_FLIGHT_BUNDLES", default=3, minimum=1, maximum=5),
+        min_flights,
+    )
+    fallback_raw = await asyncio.to_thread(
+        search_transport_options_from_trip,
+        origin=str(trip_request.get("origin") or ""),
+        destination=str(trip_request.get("destination") or ""),
+        departure_date=str(trip_request.get("start_date") or ""),
+        return_date=str(trip_request.get("end_date") or ""),
+        origin_iata=trip_request.get("origin_iata"),
+        destination_iata=trip_request.get("destination_iata"),
+        limit=fallback_limit,
+    )
+    fallback_flights = (fallback_raw or {}).get("transports", []) or []
+    fallback_flights = [x for x in fallback_flights if str(x.get("mode") or "").lower() == "avion"]
+    if not fallback_flights:
+        return current_flights, "No se encontraron más vuelos en fallback directo de Amadeus."
+
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in [*current_flights, *fallback_flights]:
+        item_id = str(item.get("id") or "").strip()
+        key = item_id or json.dumps(item, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+
+    if len(merged) > len(current_flights):
+        return merged, f"Se ampliaron opciones de vuelo con fallback directo de Amadeus (total: {len(merged)})."
+    return merged, None
+
+
 class TripOptionsRequest(BaseModel):
     origin: str
     destination: str
     start_date: date
     end_date: date
-    transport_mode: Literal["avion", "coche"] = "avion"
     interests: str | List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -387,7 +692,7 @@ class TripOptionsRequest(BaseModel):
             "destination": " ".join(self.destination.strip().split()),
             "start_date": self.start_date.isoformat(),
             "end_date": self.end_date.isoformat(),
-            "transport_mode": self.transport_mode,
+            "transport_mode": "avion",
             "interests": _normalize_interests(self.interests),
         }
 
@@ -505,7 +810,7 @@ async def _run_agent_step_async(
 
 async def _run_core_agents_async(
     trip_form_input: Dict[str, Any],
-) -> Dict[str, Dict[str, Any]]:
+) -> Dict[str, Any]:
     _ensure_google_llm_api_key()
     if not os.getenv("GOOGLE_API_KEY"):
         raise ValueError(
@@ -525,18 +830,26 @@ async def _run_core_agents_async(
         prompt=planner_prompt,
     )
 
-    transport_state = {TRIP_REQUEST_JSON: trip_request}
+    flight_trip_request = dict(trip_request)
+    flight_trip_request["transport_mode"] = "avion"
+
+    transport_state = {TRIP_REQUEST_JSON: flight_trip_request}
     hotel_state = {TRIP_REQUEST_JSON: trip_request}
-    transport_mode = str(trip_request.get("transport_mode") or "").lower()
     weather_task = asyncio.to_thread(_fetch_weather_for_trip, trip_request)
+    car_transport_task = _build_car_transport_options_async(trip_request)
 
     transport_task = _run_agent_step_async(
         agent=build_transport_agent(
             model,
-            enable_maps_mcp=(transport_mode == "coche"),
+            enable_maps_mcp=False,
         ),
         output_key=TRANSPORT_OPTIONS_JSON,
-        prompt="Genera opciones de transporte usando trip_request_json. Devuelve SOLO JSON valido.",
+        prompt=(
+            "Genera opciones de transporte usando trip_request_json. "
+            "Devuelve idealmente entre 3 y 5 vuelos distintos cuando haya disponibilidad "
+            "(si hay menos, devuelve todos los disponibles). "
+            "Devuelve SOLO JSON valido."
+        ),
         state=transport_state,
     )
     hotel_task = _run_agent_step_async(
@@ -545,24 +858,27 @@ async def _run_core_agents_async(
         prompt="Genera opciones de hotel usando trip_request_json. Devuelve SOLO JSON valido.",
         state=hotel_state,
     )
-    transport_options, hotel_options, weather_forecast = await asyncio.gather(
+    flight_transport_options, hotel_options, weather_forecast, car_transport_result = await asyncio.gather(
         transport_task,
         hotel_task,
         weather_task,
+        car_transport_task,
     )
-
-    bundle_options = await _run_agent_step_async(
-        agent=build_bundle_builder_agent(model),
-        output_key=CANDIDATE_BUNDLES_JSON,
-        prompt=(
-            "Combina transporte y hotel en 3-5 bundles. "
-            "Usa solo IDs presentes en transport_options_json y hotel_options_json. Devuelve SOLO JSON."
-        ),
-        state={
-            TRANSPORT_OPTIONS_JSON: transport_options,
-            HOTEL_OPTIONS_JSON: hotel_options,
-        },
+    car_transports, car_notices = car_transport_result
+    flight_transports = (flight_transport_options or {}).get("transports", []) or []
+    # Dejar solo vuelos en la parte aérea por seguridad, por si el agente mezcla modos.
+    flight_transports = [x for x in flight_transports if str(x.get("mode") or "").lower() == "avion"]
+    flight_transports, flight_fallback_notice = await _ensure_min_flight_options_async(
+        trip_request=flight_trip_request,
+        current_flights=flight_transports,
     )
+    extra_notices: List[str] = []
+    if flight_fallback_notice:
+        extra_notices.append(flight_fallback_notice)
+    transport_options = {
+        "transports": [*car_transports, *flight_transports],
+    }
+    bundle_options, bundle_notices = _build_dual_mode_bundles(transport_options, hotel_options)
 
     return {
         TRIP_REQUEST_JSON: trip_request,
@@ -570,6 +886,7 @@ async def _run_core_agents_async(
         HOTEL_OPTIONS_JSON: hotel_options,
         CANDIDATE_BUNDLES_JSON: bundle_options,
         WEATHER_FORECAST_JSON: weather_forecast or {},
+        "_notices": [*car_notices, *bundle_notices, *extra_notices],
     }
 
 
@@ -729,6 +1046,7 @@ async def generate_options(payload: TripOptionsRequest) -> TripOptionsResponse:
         weather = flow_state.get(WEATHER_FORECAST_JSON) or {}
 
         notices: List[str] = []
+        notices.extend(flow_state.get("_notices", []) or [])
         if weather.get("warning") == "forecast_out_of_range":
             notices.append(
                 "La previsión de Open-Meteo solo llega a fechas cercanas. "
