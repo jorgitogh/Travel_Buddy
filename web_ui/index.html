@@ -22,12 +22,15 @@
   <body>
     <div class="grain"></div>
     <main class="app-shell">
+      <div class="app-logo">
+        <img src="./logo.png" alt="Travel Buddy" />
+      </div>
       <section class="hero">
-        <p class="hero-kicker">Travel Buddy Local UI</p>
-        <h1>Planificador de viaje con agentes reales</h1>
+        <p class="hero-kicker">Local UI</p>
+        <h1>Planificador de Viajes con Inteligencia Artifical</h1>
         <p class="hero-subtitle">
-          Busca transporte y hoteles, compara bundles y genera un itinerario diario adaptado a
-          intereses y previsión meteorológica.
+          Busca transporte y hoteles, compara packs y genera un itinerario diario adaptado a
+          tus intereses y teniendo en cuenta la previsión meteorológica.
         </p>
         <div class="steps">
           <span class="step-pill" data-step="options">1. Opciones</span>
@@ -106,10 +109,7 @@
       </section>
 
       <section id="bundles-section" class="panel hidden">
-        <div class="section-head">
-          <h2>Selecciona tu bundle</h2>
-          <button id="generate-itinerary" type="button" disabled>Generar itinerario</button>
-        </div>
+        <h2>Selecciona tu bundle</h2>
         <div id="budget-filter" class="budget-filter hidden">
           <div class="budget-filter-head">
             <p class="budget-title">Filtro de presupuesto</p>
@@ -128,6 +128,7 @@
           <p id="budget-visible-count" class="budget-visible-count"></p>
         </div>
         <div id="bundles-grid" class="bundles-grid"></div>
+        <button id="generate-itinerary" type="button" disabled class="generate-itinerary-btn">Generar itinerario</button>
       </section>
 
       <section id="itinerary-section" class="panel hidden">

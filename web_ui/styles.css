@@ -333,6 +333,14 @@ button:disabled {
   gap: 12px;
 }
 
+.generate-itinerary-btn {
+  width: 100%;
+  margin-top: 16px;
+  background: linear-gradient(135deg, #0f5fd4 0%, #0f9b8e 100%);
+  color: #f8fbff;
+  box-shadow: 0 12px 24px rgba(15, 95, 212, 0.24);
+}
+
 .bundles-empty {
   border: 1px dashed rgba(19, 34, 56, 0.24);
   border-radius: var(--radius-md);
@@ -792,4 +800,17 @@ button:disabled {
   .cal-btn {
     justify-content: center;
   }
+}
+/* ── App logo (fuera de paneles) ─────────────────────────────────────────── */
+.app-logo {
+  display: flex;
+  justify-content: center;
+}
+
+.app-logo img {
+  height: 500px; /* antes 120px */
+  width: auto;
+  display: block;
+  mix-blend-mode: multiply;
+  margin: -150px auto -150px; /* compensa el espacio extra arriba y abajo */
 }

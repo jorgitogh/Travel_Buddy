@@ -242,9 +242,9 @@ function hideCalendarExport() {
 
 function setDefaultDates() {
   const start = new Date();
-  start.setDate(start.getDate() + 20);
+  start.setDate(start.getDate() + 9);
   const end = new Date();
-  end.setDate(end.getDate() + 23);
+  end.setDate(end.getDate() + 12);
 
   document.querySelector("#start_date").value = formatDate(start);
   document.querySelector("#end_date").value = formatDate(end);
