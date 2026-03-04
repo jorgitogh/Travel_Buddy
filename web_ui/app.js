@@ -2,6 +2,7 @@ const state = {
   options: null,
   selectedBundleId: "",
   selectedBundle: null,
+  bundleCarouselIndex: 0,
   itinerary: null,
   budgetFilter: {
     enabled: false,
@@ -23,6 +24,10 @@ const refs = {
   generateButton: document.querySelector("#generate-itinerary"),
   bundlesSection: document.querySelector("#bundles-section"),
   bundlesGrid: document.querySelector("#bundles-grid"),
+  bundlesCarousel: document.querySelector("#bundles-carousel"),
+  bundlesViewport: document.querySelector("#bundles-viewport"),
+  bundlesPrev: document.querySelector("#bundles-prev"),
+  bundlesNext: document.querySelector("#bundles-next"),
   budgetFilter: document.querySelector("#budget-filter"),
   budgetMin: document.querySelector("#budget-min"),
   budgetMax: document.querySelector("#budget-max"),
@@ -513,6 +518,110 @@ function renderMetrics() {
   refs.metricsSection.classList.remove("hidden");
 }
 
+function getVisibleBundleCards() {
+  if (!refs.bundlesCarousel) {
+    return 3;
+  }
+  const raw = getComputedStyle(refs.bundlesCarousel)
+    .getPropertyValue("--bundle-visible-cards")
+    .trim();
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 3;
+  }
+  return parsed;
+}
+
+function updateBundleCarouselPosition() {
+  if (!refs.bundlesGrid) {
+    return;
+  }
+
+  const cards = Array.from(refs.bundlesGrid.querySelectorAll(".bundle-card"));
+  const totalCards = cards.length;
+  const visibleCards = Math.max(1, getVisibleBundleCards());
+  const maxIndex = Math.max(0, totalCards - visibleCards);
+  state.bundleCarouselIndex = Math.min(state.bundleCarouselIndex, maxIndex);
+
+  if (totalCards === 0) {
+    refs.bundlesGrid.style.transform = "translateX(0)";
+  } else {
+    const cardWidth = cards[0].getBoundingClientRect().width;
+    const trackStyles = getComputedStyle(refs.bundlesGrid);
+    const gap = Number.parseFloat(trackStyles.gap || "0");
+    const offset = state.bundleCarouselIndex * (cardWidth + gap);
+    refs.bundlesGrid.style.transform = `translateX(-${offset}px)`;
+  }
+
+  if (refs.bundlesPrev) {
+    refs.bundlesPrev.disabled = totalCards <= visibleCards || state.bundleCarouselIndex <= 0;
+  }
+  if (refs.bundlesNext) {
+    refs.bundlesNext.disabled =
+      totalCards <= visibleCards || state.bundleCarouselIndex >= maxIndex;
+  }
+}
+
+function slideBundleCarousel(direction) {
+  const cards = Array.from(refs.bundlesGrid.querySelectorAll(".bundle-card"));
+  const totalCards = cards.length;
+  const visibleCards = Math.max(1, getVisibleBundleCards());
+  const maxIndex = Math.max(0, totalCards - visibleCards);
+  state.bundleCarouselIndex = Math.min(
+    maxIndex,
+    Math.max(0, state.bundleCarouselIndex + direction)
+  );
+  updateBundleCarouselPosition();
+}
+
+function ensureBundleCarouselStructure() {
+  if (!refs.bundlesGrid) {
+    return;
+  }
+  if (refs.bundlesCarousel && refs.bundlesViewport && refs.bundlesPrev && refs.bundlesNext) {
+    return;
+  }
+
+  const parent = refs.bundlesGrid.parentElement;
+  if (!parent) {
+    return;
+  }
+
+  const carousel = document.createElement("div");
+  carousel.id = "bundles-carousel";
+  carousel.className = "bundles-carousel";
+
+  const prev = document.createElement("button");
+  prev.id = "bundles-prev";
+  prev.className = "bundles-nav bundles-nav-prev";
+  prev.type = "button";
+  prev.setAttribute("aria-label", "Mostrar bundles anteriores");
+  prev.innerHTML = "&#10094;";
+
+  const viewport = document.createElement("div");
+  viewport.id = "bundles-viewport";
+  viewport.className = "bundles-viewport";
+
+  const next = document.createElement("button");
+  next.id = "bundles-next";
+  next.className = "bundles-nav bundles-nav-next";
+  next.type = "button";
+  next.setAttribute("aria-label", "Mostrar siguientes bundles");
+  next.innerHTML = "&#10095;";
+
+  parent.insertBefore(carousel, refs.bundlesGrid);
+  parent.removeChild(refs.bundlesGrid);
+  viewport.appendChild(refs.bundlesGrid);
+  carousel.appendChild(prev);
+  carousel.appendChild(viewport);
+  carousel.appendChild(next);
+
+  refs.bundlesCarousel = carousel;
+  refs.bundlesViewport = viewport;
+  refs.bundlesPrev = prev;
+  refs.bundlesNext = next;
+}
+
 function renderBundles() {
   const bundles = state.options?.candidate_bundles?.bundles || [];
   const { transportById, hotelById } = getTransportAndHotelMaps();
@@ -598,6 +707,7 @@ function renderBundles() {
     `;
   }
 
+  updateBundleCarouselPosition();
   refs.bundlesSection.classList.remove("hidden");
 }
 
@@ -906,6 +1016,7 @@ async function onSubmitTrip(event) {
   state.options = null;
   state.selectedBundle = null;
   state.selectedBundleId = "";
+  state.bundleCarouselIndex = 0;
   state.itinerary = null;
   resetRoadRouteView();
   hideCalendarExport();
@@ -980,12 +1091,16 @@ async function onGenerateItinerary() {
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
 function bootstrap() {
+  ensureBundleCarouselStructure();
   setDefaultDates();
   setStep("options");
   refs.form.addEventListener("submit", onSubmitTrip);
   refs.generateButton.addEventListener("click", onGenerateItinerary);
   refs.budgetMin.addEventListener("input", () => onBudgetSliderChange("min"));
   refs.budgetMax.addEventListener("input", () => onBudgetSliderChange("max"));
+  refs.bundlesPrev?.addEventListener("click", () => slideBundleCarousel(-1));
+  refs.bundlesNext?.addEventListener("click", () => slideBundleCarousel(1));
+  window.addEventListener("resize", updateBundleCarouselPosition);
 
   // Calendar export buttons
   document.querySelector("#cal-google")?.addEventListener("click", () => {
