@@ -7,10 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -23,7 +20,7 @@
     <div class="grain"></div>
     <main class="app-shell">
       <div class="app-logo">
-        <img src="./logo.png" alt="Travel Buddy" />
+        <img src="./1logo.png" alt="Travel Buddy" />
       </div>
       <section class="hero">
         <p class="hero-kicker">Local UI</p>
@@ -115,7 +112,27 @@
           </div>
           <p id="budget-visible-count" class="budget-visible-count"></p>
         </div>
-        <div id="bundles-grid" class="bundles-grid"></div>
+        <div id="bundles-carousel" class="bundles-carousel">
+          <button
+            id="bundles-prev"
+            class="bundles-nav bundles-nav-prev"
+            type="button"
+            aria-label="Mostrar bundles anteriores"
+          >
+            &#10094;
+          </button>
+          <div id="bundles-viewport" class="bundles-viewport">
+            <div id="bundles-grid" class="bundles-grid"></div>
+          </div>
+          <button
+            id="bundles-next"
+            class="bundles-nav bundles-nav-next"
+            type="button"
+            aria-label="Mostrar siguientes bundles"
+          >
+            &#10095;
+          </button>
+        </div>
         <button id="generate-itinerary" type="button" disabled class="generate-itinerary-btn">Generar itinerario</button>
       </section>
 

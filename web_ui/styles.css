@@ -6,7 +6,7 @@
   --ink-soft: #3f506a;
   --line: rgba(19, 34, 56, 0.14);
   --accent: #0f5fd4;
-  --accent-2: #0f9b8e;
+  --accent-2: #3432c6;
   --danger: #b42318;
   --shadow: 0 16px 40px rgba(17, 24, 39, 0.13);
   --radius-xl: 24px;
@@ -45,7 +45,7 @@ body {
   margin: 0 auto;
   padding: 32px 20px 48px;
   display: grid;
-  gap: 20px;
+  gap: 30px;
 }
 
 .hero,
@@ -327,10 +327,49 @@ button:disabled {
   color: var(--ink-soft);
 }
 
+.bundles-carousel {
+  --bundle-visible-cards: 3;
+  --bundle-gap: 12px;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  gap: 10px;
+  align-items: center;
+}
+
+.bundles-viewport {
+  overflow: hidden !important;
+}
+
 .bundles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 12px;
+  display: flex !important;
+  gap: var(--bundle-gap);
+  transform: translateX(0);
+  transition: transform 0.45s ease;
+  will-change: transform;
+}
+
+.bundles-grid .bundle-card {
+  flex: 0 0 calc((100% - (var(--bundle-gap) * (var(--bundle-visible-cards) - 1))) / var(--bundle-visible-cards));
+}
+
+.bundles-nav {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 95, 212, 0.26);
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f5fd4;
+  box-shadow: 0 8px 18px rgba(15, 95, 212, 0.16);
+  font-size: 1.15rem;
+  padding: 0;
+  display: grid !important;
+  place-items: center;
+}
+
+.bundles-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .generate-itinerary-btn {
@@ -342,6 +381,7 @@ button:disabled {
 }
 
 .bundles-empty {
+  width: 100%;
   border: 1px dashed rgba(19, 34, 56, 0.24);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.72);
@@ -813,4 +853,661 @@ button:disabled {
   display: block;
   mix-blend-mode: multiply;
   margin: -150px auto -150px; /* compensa el espacio extra arriba y abajo */
+}
+
+/* ── Visual refresh 2026: palette, typography, logo, animated bg ─────────── */
+:root {
+  --color-primary: #aad9ff;
+  --color-secondary: #00a3ff;
+  --color-background: #e7e9ec;
+  --color-text: #424242;
+  --color-accent: #3432c6;
+
+  --bg-1: var(--color-background);
+  --bg-2: var(--color-background);
+  --panel: rgba(255, 255, 255, 0.84);
+  --ink: var(--color-text);
+  --ink-soft: color-mix(in srgb, var(--color-text) 74%, white);
+  --line: color-mix(in srgb, var(--color-text) 22%, white);
+  --accent: var(--color-secondary);
+  --accent-2: var(--color-accent);
+  --danger: #b42318;
+  --shadow: 0 16px 40px rgba(52, 50, 198, 0.13);
+}
+
+body {
+  font-family: "Poppins", sans-serif;
+  background: var(--color-background);
+}
+
+h1,
+h2,
+h3,
+.hero-kicker,
+.metric-value,
+button,
+.cal-btn,
+.gmaps-btn,
+.fuel-stat-value {
+  font-family: "Poppins", sans-serif;
+}
+
+.shader-gradient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.shader-gradient-bg canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.shader-gradient-fallback {
+  background:
+    radial-gradient(circle at 16% 18%, rgba(0, 163, 255, 0.44), transparent 34%),
+    radial-gradient(circle at 82% 11%, rgba(170, 217, 255, 0.72), transparent 38%),
+    linear-gradient(135deg, #e7e9ec 0%, #dbe7f1 60%, #d7e4f2 100%);
+  background-size: 140% 140%;
+  animation: shaderFallbackFlow 16s ease-in-out infinite;
+}
+
+@keyframes shaderFallbackFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.grain {
+  opacity: 0.08;
+  z-index: 1;
+}
+
+.app-shell {
+  z-index: 2;
+}
+
+.hero::after {
+  background: radial-gradient(circle, rgba(0, 163, 255, 0.28) 0%, rgba(0, 163, 255, 0) 70%);
+}
+
+.step-pill.active {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-primary) 52%, white);
+  border-color: color-mix(in srgb, var(--color-secondary) 55%, white);
+}
+
+input:focus {
+  border-color: color-mix(in srgb, var(--color-secondary) 60%, white);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-secondary) 24%, transparent);
+}
+
+#submit-trip,
+#generate-itinerary,
+.generate-itinerary-btn {
+  background: linear-gradient(135deg, var(--color-secondary) 0%, var(--color-accent) 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(0, 163, 255, 0.23);
+}
+
+.msg.info {
+  border-left-color: var(--color-secondary);
+}
+
+.transport-mode {
+  color: var(--color-secondary);
+}
+
+.eta-chip {
+  background: color-mix(in srgb, var(--color-primary) 46%, white);
+  color: var(--color-accent);
+}
+
+.total-price {
+  background: linear-gradient(135deg, var(--color-secondary) 0%, var(--color-accent) 100%);
+}
+
+.road-route-fuel {
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 28%, white);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-secondary) 10%, white) 0%,
+    color-mix(in srgb, var(--color-accent) 10%, white) 100%
+  );
+}
+
+.cal-btn--google,
+.cal-btn--outlook,
+.cal-btn--ical,
+.gmaps-btn {
+  background: #ffffff;
+  color: var(--color-text);
+  border-color: color-mix(in srgb, var(--color-text) 20%, white);
+}
+
+.app-logo {
+  justify-content: flex-start;
+  align-items: center;
+  padding: 8px 6px 2px;
+}
+
+.app-logo img {
+  height: clamp(74px, 10vw, 118px);
+  width: auto;
+  display: block;
+  margin: 0;
+  mix-blend-mode: normal;
+  filter: drop-shadow(0 6px 20px rgba(0, 163, 255, 0.2));
+}
+
+@media (max-width: 720px) {
+  .app-logo {
+    justify-content: center;
+    padding-top: 2px;
+  }
+}
+
+/* ── CSS-only animated background (replaces ShaderGradient JS) ───────────── */
+.shader-gradient-bg {
+  position: fixed;
+  inset: -10%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 40% at 18% 24%, rgba(0, 163, 255, 0.48) 0%, rgba(0, 163, 255, 0) 70%),
+    radial-gradient(36% 34% at 82% 18%, rgba(170, 217, 255, 0.72) 0%, rgba(170, 217, 255, 0) 72%),
+    radial-gradient(34% 32% at 64% 80%, rgba(52, 50, 198, 0.2) 0%, rgba(52, 50, 198, 0) 74%),
+    linear-gradient(140deg, #e7e9ec 0%, #dbe8f3 52%, #d3e4f5 100%);
+  background-size: 130% 130%, 140% 140%, 150% 150%, 100% 100%;
+  animation: cssShaderFlow 20s ease-in-out infinite;
+}
+
+.shader-gradient-bg::before,
+.shader-gradient-bg::after {
+  content: "";
+  position: absolute;
+  width: 45vmax;
+  height: 45vmax;
+  border-radius: 999px;
+  filter: blur(28px);
+  opacity: 0.45;
+}
+
+.shader-gradient-bg::before {
+  left: -10vmax;
+  top: -6vmax;
+  background: radial-gradient(circle, rgba(0, 163, 255, 0.5) 0%, rgba(170, 217, 255, 0) 72%);
+  animation: cssFloatA 18s ease-in-out infinite;
+}
+
+.shader-gradient-bg::after {
+  right: -12vmax;
+  bottom: -10vmax;
+  background: radial-gradient(circle, rgba(52, 50, 198, 0.28) 0%, rgba(170, 217, 255, 0) 72%);
+  animation: cssFloatB 22s ease-in-out infinite;
+}
+
+@keyframes cssShaderFlow {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    background-position: 0% 45%, 100% 8%, 70% 100%, 0 0;
+  }
+  50% {
+    transform: translate3d(0, -1.2%, 0) scale(1.03);
+    background-position: 14% 52%, 90% 14%, 78% 92%, 0 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    background-position: 0% 45%, 100% 8%, 70% 100%, 0 0;
+  }
+}
+
+@keyframes cssFloatA {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6vmax, 5vmax, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes cssFloatB {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-7vmax, -4vmax, 0) scale(1.1); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shader-gradient-bg,
+  .shader-gradient-bg::before,
+  .shader-gradient-bg::after {
+    animation: none !important;
+  }
+}
+
+/* ── Logo principal grande y centrado (override final) ───────────────────── */
+.app-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0 0;
+}
+
+.app-logo img {
+  height: clamp(220px, 34vw, 500px);
+  width: auto;
+  display: block;
+  margin: -90px auto -90px;
+  mix-blend-mode: multiply;
+  filter: none;
+}
+
+@media (max-width: 720px) {
+  .app-logo img {
+    height: clamp(160px, 56vw, 320px);
+    margin: -44px auto -44px;
+  }
+}
+
+/* ── Fallback robusto localhost: fondo animado en body ───────────────────── */
+body {
+  position: relative;
+  overflow-x: hidden;
+  background: #e7e9ec;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  pointer-events: none;
+}
+
+body::before {
+  z-index: 0;
+  background:
+    radial-gradient(42% 40% at 18% 24%, rgba(0, 163, 255, 0.46) 0%, rgba(0, 163, 255, 0) 72%),
+    radial-gradient(34% 32% at 82% 16%, rgba(170, 217, 255, 0.7) 0%, rgba(170, 217, 255, 0) 74%),
+    radial-gradient(34% 32% at 62% 84%, rgba(52, 50, 198, 0.2) 0%, rgba(52, 50, 198, 0) 74%),
+    linear-gradient(140deg, #e7e9ec 0%, #dbe8f3 52%, #d3e4f5 100%);
+  background-size: 130% 130%, 140% 140%, 150% 150%, 100% 100%;
+  animation: cssShaderFlow 20s ease-in-out infinite;
+}
+
+body::after {
+  z-index: 0;
+  width: 52vmax;
+  height: 52vmax;
+  border-radius: 999px;
+  right: -14vmax;
+  bottom: -12vmax;
+  inset: auto;
+  filter: blur(30px);
+  opacity: 0.42;
+  background: radial-gradient(circle, rgba(52, 50, 198, 0.28) 0%, rgba(170, 217, 255, 0) 72%);
+  animation: cssFloatB 22s ease-in-out infinite;
+}
+
+/* El div auxiliar ya no es necesario para ver el fondo */
+.shader-gradient-bg {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+  }
+}
+
+/* ── Force visible animated background (debug localhost) ─────────────────── */
+body::before {
+  animation: bgDrift 14s ease-in-out infinite !important;
+}
+
+body::after {
+  animation: orbDrift 10s ease-in-out infinite !important;
+}
+
+@keyframes bgDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    background-position: 0% 45%, 100% 8%, 70% 100%, 0 0;
+  }
+  50% {
+    transform: translate3d(-2.5%, 2%, 0) scale(1.07);
+    background-position: 18% 62%, 84% 18%, 82% 88%, 0 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    background-position: 0% 45%, 100% 8%, 70% 100%, 0 0;
+  }
+}
+
+@keyframes orbDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-9vmax, -7vmax, 0) scale(1.18);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ── Ultra visible animation override ─────────────────────────────────────── */
+body::before {
+  animation: bgPan 6s linear infinite !important;
+}
+
+body::after {
+  opacity: 0.62 !important;
+  filter: blur(20px) !important;
+  animation: orbSpin 4s ease-in-out infinite alternate !important;
+}
+
+@keyframes bgPan {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.02) rotate(0deg);
+    background-position: 0% 0%, 100% 0%, 50% 100%, 0 0;
+  }
+  50% {
+    transform: translate3d(-3%, 2%, 0) scale(1.1) rotate(0.8deg);
+    background-position: 28% 22%, 74% 16%, 84% 78%, 0 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.02) rotate(0deg);
+    background-position: 0% 0%, 100% 0%, 50% 100%, 0 0;
+  }
+}
+
+@keyframes orbSpin {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(-13vmax, -9vmax, 0) scale(1.3);
+  }
+}
+
+/* ── Visual proof: animated light layer (very noticeable) ─────────────────── */
+html::before {
+  content: "";
+  position: fixed;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    rgba(0, 163, 255, 0.18),
+    rgba(52, 50, 198, 0.14),
+    rgba(170, 217, 255, 0.2),
+    rgba(0, 163, 255, 0.18)
+  );
+  mix-blend-mode: soft-light;
+  animation: bgSpin 7s linear infinite !important;
+}
+
+@keyframes bgSpin {
+  from { transform: rotate(0deg) scale(1.06); }
+  to { transform: rotate(360deg) scale(1.06); }
+}
+
+/* ── ShaderGradient real background (final override) ──────────────────────── */
+html::before,
+body::before,
+body::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+.shader-gradient-bg {
+  display: block !important;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.shader-gradient-bg canvas,
+.shader-gradient-bg > div,
+.shader-gradient-bg > * {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+.grain {
+  z-index: 1;
+}
+
+.app-shell {
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Final fixed background (blue image style) ───────────────────────────── */
+body {
+  background-color: #0a1bd6 !important;
+  background-image:
+    radial-gradient(80% 90% at 10% 100%, rgba(88, 232, 255, 0.45) 0%, rgba(88, 232, 255, 0) 52%),
+    radial-gradient(70% 80% at 95% 100%, rgba(78, 220, 255, 0.4) 0%, rgba(78, 220, 255, 0) 56%),
+    radial-gradient(75% 60% at 50% 20%, rgba(120, 175, 255, 0.32) 0%, rgba(120, 175, 255, 0) 58%),
+    repeating-linear-gradient(
+      122deg,
+      rgba(45, 78, 255, 0.34) 0px,
+      rgba(45, 78, 255, 0.34) 38px,
+      rgba(15, 24, 180, 0.18) 38px,
+      rgba(15, 24, 180, 0.18) 78px
+    ),
+    linear-gradient(145deg, #0f20dc 0%, #1728ea 42%, #2347ff 75%, #2861ff 100%) !important;
+  background-attachment: fixed !important;
+  background-size: cover !important;
+}
+
+/* Desactiva cualquier resto de fondos experimentales previos */
+html::before,
+body::before,
+body::after,
+.shader-gradient-bg {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+  background: none !important;
+}
+
+.grain {
+  opacity: 0.12;
+}
+
+/* ── Final user background image override ─────────────────────────────────── */
+body {
+  background: #0a1bd6 url("./assets/background.png") center center / cover no-repeat fixed !important;
+}
+
+/* ── Final background override (white base + light blue style) ───────────── */
+body {
+  background-color: #ffffff !important;
+  background-image:
+    radial-gradient(45% 58% at 15% 70%, rgba(110, 206, 245, 0.52) 0%, rgba(110, 206, 245, 0) 72%),
+    radial-gradient(34% 42% at 84% 76%, rgba(66, 188, 242, 0.55) 0%, rgba(66, 188, 242, 0) 74%),
+    radial-gradient(36% 34% at 50% 20%, rgba(214, 235, 247, 0.85) 0%, rgba(214, 235, 247, 0) 76%),
+    linear-gradient(90deg, #bfe8fb 0%, #eaf6fc 50%, #bfe8fb 100%) !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: center center !important;
+  background-attachment: fixed !important;
+}
+
+/* ── Requested UI adjustments: boxes, typography, sizing, submit width ───── */
+* {
+  font-family: "Poppins", sans-serif !important;
+}
+
+/* Cajas principales */
+.hero,
+.panel {
+  background: #e7e9ec !important;
+}
+
+/* Cajas internas dentro de paneles */
+.metric-card,
+.msg,
+.budget-filter,
+.bundle-card,
+.day-card,
+.road-route-warning,
+.calendar-export {
+  background: #ffffff !important;
+}
+
+/* Inputs también dentro de caja visual consistente */
+input[type="text"],
+input[type="date"],
+textarea,
+select {
+  background: #ffffff !important;
+  font-size: clamp(1rem, 1.2vw, 1.15rem) !important;
+}
+
+/* Textos ajustados a cajas */
+.panel h2 {
+  font-size: clamp(2rem, 3vw, 3rem) !important;
+  line-height: 1.12 !important;
+}
+
+.hero h1 {
+  font-size: clamp(2.2rem, 4vw, 4rem) !important;
+  line-height: 1.08 !important;
+}
+
+.hero-subtitle,
+.trip-form label,
+.metric-label,
+.metric-caption,
+.msg,
+.step-pill,
+.budget-title,
+.budget-range-value,
+.budget-visible-count {
+  font-size: clamp(1rem, 1.15vw, 1.2rem) !important;
+}
+
+/* Botón Buscar opciones alargado a toda la caja del formulario */
+#submit-trip {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  display: block !important;
+  padding: 14px 18px !important;
+  font-size: clamp(1.05rem, 1.4vw, 1.25rem) !important;
+}
+
+/* ── Logo bigger + less gap to first box (final tweak) ───────────────────── */
+.app-logo {
+  padding: 0 !important;
+  margin-bottom: -34px !important;
+}
+
+.app-logo img {
+  height: clamp(300px, 42vw, 620px) !important;
+  margin: -70px auto -115px !important;
+}
+
+@media (max-width: 720px) {
+  .app-logo {
+    margin-bottom: -18px !important;
+  }
+
+  .app-logo img {
+    height: clamp(220px, 64vw, 380px) !important;
+    margin: -34px auto -64px !important;
+  }
+}
+
+/* ── Smaller title: Define tu viaje ───────────────────────────────────────── */
+.app-shell > .panel:first-of-type h2 {
+  font-size: clamp(1.6rem, 2.1vw, 2.2rem) !important;
+}
+
+/* ── White inner fields in "Define tu viaje" panel ───────────────────────── */
+.app-shell > .panel:first-of-type input[type="text"],
+.app-shell > .panel:first-of-type input[type="date"],
+.app-shell > .panel:first-of-type textarea,
+.app-shell > .panel:first-of-type select {
+  background: #ffffff !important;
+}
+
+/* ── Slightly smaller typography (final tune) ─────────────────────────────── */
+body {
+  font-size: 15px !important;
+}
+
+.hero h1 {
+  font-size: clamp(1.9rem, 3.3vw, 3.1rem) !important;
+}
+
+.panel h2 {
+  font-size: clamp(1.35rem, 1.9vw, 1.95rem) !important;
+}
+
+.hero-subtitle,
+.trip-form label,
+input[type="text"],
+input[type="date"],
+.step-pill,
+button,
+.msg,
+.metric-label,
+.metric-caption,
+.metric-value {
+  font-size: clamp(0.92rem, 1.02vw, 1.02rem) !important;
+}
+
+/* ── Itinerario: tarjetas en azules pastel muy claros ─────────────────────── */
+.itinerary-days .day-card {
+  border: 1px solid #dbe8ff !important;
+  color: #22344f !important;
+}
+
+.itinerary-days .mood-sunny {
+  background: linear-gradient(135deg, #eef5ff 0%, #e6f0ff 100%) !important;
+}
+
+.itinerary-days .mood-cloudy {
+  background: linear-gradient(135deg, #edf4ff 0%, #e4efff 100%) !important;
+}
+
+.itinerary-days .mood-rain {
+  background: linear-gradient(135deg, #e8f2ff 0%, #deecff 100%) !important;
+}
+
+.itinerary-days .mood-storm {
+  background: linear-gradient(135deg, #e6efff 0%, #dbe8ff 100%) !important;
+}
+
+.itinerary-days .mood-snow {
+  background: linear-gradient(135deg, #f1f7ff 0%, #eaf3ff 100%) !important;
+}
+
+.itinerary-days .mood-fog {
+  background: linear-gradient(135deg, #edf3ff 0%, #e3edff 100%) !important;
+}
+
+.itinerary-days .mood-neutral {
+  background: linear-gradient(135deg, #ecf4ff 0%, #e2eeff 100%) !important;
+}
+
+/* ── Bundles: precio y botón seleccionar (igual que Buscar opciones) ─────── */
+.bundle-price {
+  color: #3432c6 !important;
+}
+
+.bundle-action,
+.bundle-card.selected .bundle-action {
+  background: linear-gradient(135deg, var(--color-secondary) 0%, var(--color-accent) 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(0, 163, 255, 0.23) !important;
 }
